@@ -1,0 +1,8 @@
+.vscode/
+__pycache__/
+assets/*
+snapshots/
+logs/
+outputs/
+tmp/
+temp/

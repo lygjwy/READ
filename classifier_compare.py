@@ -1,0 +1,216 @@
+'''Compare uni_ori_kl, ori_rec_kl within different classifiers
+'''
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from functools import partial
+import argparse
+import matplotlib.pyplot as plt
+
+import torch
+import torch.nn.functional as F
+import torch.backends.cudnn as cudnn
+
+from datasets import get_ae_transform, get_dataset_info, get_dataloader
+from models import get_ae, get_classifier
+
+
+class Normalize(object):
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
+    
+    def __call__(self, tensor):
+        for t, m, s in zip(tensor, self.mean, self.std):
+            # t.mul_(s).add_(m)
+            t.sub_(m).div_(s)
+        return tensor
+    
+
+def get_scores(ae, classifier, data_loader, normalize):
+    ae.eval()
+    classifier.eval()
+    
+    uni_ori_kls, ori_rec_kls, scores = [], [], []
+    
+    for sample in data_loader:
+        if type(sample) == list:
+            data, _ = sample
+        else:
+            data = sample
+        
+        data = data.cuda()
+        with torch.no_grad():
+            rec_data = ae(data)
+            
+        data = torch.stack([normalize(img) for img in data], dim=0)
+        rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
+        
+        with torch.no_grad():
+            ori_logit = classifier(data)
+            rec_logit = classifier(rec_data)
+        ori_softmax = torch.softmax(ori_logit, dim=1)
+        rec_softmax = torch.softmax(rec_logit, dim=1)
+        
+        uniform_dist = torch.ones_like(ori_softmax) * (1 / ori_softmax.shape[1])
+        uni_ori_kls.extend(torch.sum(F.kl_div(ori_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
+        ori_rec_kls.extend(torch.sum(F.kl_div(rec_softmax.log(), ori_softmax, reduction='none'), dim=1).tolist())
+        
+    for uni_ori_kl, ori_rec_kl in zip(uni_ori_kls, ori_rec_kls):
+        scores.append(uni_ori_kl - ori_rec_kl)
+    return uni_ori_kls, [-1.0 * ori_rec_kl for ori_rec_kl in ori_rec_kls], scores
+
+
+def draw_hist(ax, data, colors, labels, title):
+    ax.hist(data, density=True, histtype='bar', color=colors, label=labels)
+    ax.set_xlabel('score')
+    ax.set_ylabel('density')
+    ax.legend(prop={'size': 10})
+    ax.set_title(title)
+    
+
+def main(args):
+    output_path = Path(args.output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    ae_transform = get_ae_transform('test')
+    
+    means, stds = get_dataset_info(args.id, 'mean_and_std')
+    normalize = Normalize(means, stds)
+    
+    
+    # -------------------- dataloader -------------------- #
+    get_dataloader_default = partial(
+        get_dataloader,
+        root=args.data_dir,
+        split='test',
+        transform=ae_transform,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.prefetch
+    )
+    
+    data_loader = get_dataloader_default(name=args.dataset)
+    
+    # -------------------- ae & classifiers -------------------- #
+    ae = get_ae(args.ae)
+    num_classes = len(get_dataset_info(args.id, 'classes'))
+    pure_cla = get_classifier(args.classifier, num_classes)
+    or_cla = get_classifier(args.classifier, num_classes)
+    orh_cla = get_classifier(args.classifier, num_classes)
+    
+    ae_path = Path(args.ae_path)
+    pure_cla_path = Path(args.pure_cla_path)
+    # pure_cla_path = Path('/home/iip/Vanilla_OOD_Detection/outputs/resnet18/cla_best.pth')
+    or_cla_path = Path(args.or_cla_path)
+    # or_cla_path = Path('/home/iip/Vanilla_OOD_Detection/outputs/resnet18_or/cla_best.pth')
+    orh_cla_path = Path(args.orh_cla_path)
+    # orh_cla_path = Path('/home/iip/Vanilla_OOD_Detection/outputs/resnet18_or_hybrid/cla_best.pth')
+    
+    if ae_path.exists():
+        ae_params = torch.load(str(ae_path))
+        rec_err = ae_params['rec_err']
+        ae.load_state_dict(ae_params['state_dict'])
+        print('>>> load ae from {} (rec err {})'.format(str(ae_path), rec_err))
+    else:
+        raise RuntimeError('---> invalid ae path: {}'.format(str(ae_path)))
+    
+    if pure_cla_path.exists():
+        cla_params = torch.load(str(pure_cla_path))
+        cla_acc = cla_params['cla_acc']
+        pure_cla.load_state_dict(cla_params['state_dict'])
+        print('>>> load classifier from {} (classification acc {:.4f})'.format(pure_cla_path, cla_acc))
+    else:
+        raise RuntimeError('---> invalid classifier path: {}'.format(str(pure_cla_path)))
+    
+    if or_cla_path.exists():
+        cla_params = torch.load(str(or_cla_path))
+        cla_acc = cla_params['cla_acc']
+        or_cla.load_state_dict(cla_params['state_dict'])
+        print('>>> load classifier from {} (classification acc {:.4f})'.format(or_cla_path, cla_acc))
+    else:
+        raise RuntimeError('---> invalid classifier path: {}'.format(str(or_cla_path)))
+    
+    if orh_cla_path.exists():
+        cla_params = torch.load(str(orh_cla_path))
+        cla_acc = cla_params['cla_acc']
+        orh_cla.load_state_dict(cla_params['state_dict'])
+        print('>>> load classifier from {} (classification acc {:.4f})'.format(orh_cla_path, cla_acc))
+    else:
+        raise RuntimeError('---> invalid classifier path: {}'.format(str(orh_cla_path)))
+    
+    gpu_idx = int(args.gpu_idx)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(gpu_idx)
+        ae.cuda()
+        pure_cla.cuda()
+        or_cla.cuda()
+        orh_cla.cuda()
+    cudnn.benchmark = True
+    
+    # -------------------- inference -------------------- #
+    pure_uni_ori_kls, pure_ori_rec_kls, pure_scores = get_scores(ae, pure_cla, data_loader, normalize)
+    or_uni_ori_kls, or_ori_rec_kls, or_scores = get_scores(ae, or_cla, data_loader, normalize)
+    orh_uni_ori_kls, orh_ori_rec_kls, orh_scores = get_scores(ae, orh_cla, data_loader, normalize)
+    
+    fig, axs = plt.subplots(2, 3, figsize=(15, 10))
+    
+    # plot hists
+    colors = ['lime', 'cyan']
+    labels = ['pure', 'or']
+    #  one fig compares two classifiers with 3 metrics
+    p_or_uo_kls = [pure_uni_ori_kls, or_uni_ori_kls]
+    p_or_uo_kls_title = '-'.join([args.dataset, 'pure_or-uniform_ori-kls'])
+    # p_or_uo_kls_fig_path = output_path / (p_or_uo_kls_title + '.png')
+    draw_hist(axs[0, 0], p_or_uo_kls, colors, labels, p_or_uo_kls_title)
+    
+    p_or_or_kls = [pure_ori_rec_kls, or_ori_rec_kls]
+    p_or_or_kls_title = '-'.join([args.dataset, 'pure_or-ori_rec-kls'])
+    # p_or_or_kls_fig_path = output_path / (p_or_or_kls_title + '.png')
+    draw_hist(axs[0, 1], p_or_or_kls, colors, labels, p_or_or_kls_title)
+    
+    p_or_scores = [pure_scores, or_scores]
+    p_or_scores_title = '-'.join([args.dataset, 'pure_or-scores'])
+    # p_or_scores_fig_path = output_path / (p_or_scores_title + '.png')
+    draw_hist(axs[0, 2], p_or_scores, colors, labels, p_or_scores_title)
+
+    
+    labels = ['pure', 'orh']    
+    p_orh_uo_kls = [pure_uni_ori_kls, orh_uni_ori_kls]
+    p_orh_uo_kls_title = '-'.join([args.dataset, 'pure_orh-uniform_ori-kls'])
+    # p_orh_uo_kls_fig_path = output_path / (p_orh_uo_kls_title + '.png')
+    draw_hist(axs[1, 0], p_orh_uo_kls, colors, labels, p_orh_uo_kls_title)
+    
+    p_orh_or_kls = [pure_ori_rec_kls, orh_ori_rec_kls]
+    p_orh_or_kls_title = '-'.join([args.dataset, 'pure_orh-ori_rec-kls'])
+    # p_orh_or_kls_fig_path = output_path / (p_orh_or_kls_title + '.png')
+    draw_hist(axs[1, 1], p_orh_or_kls, colors, labels, p_orh_or_kls_title)
+    
+    p_orh_scores = [pure_scores, orh_scores]
+    p_orh_scores_title = '-'.join([args.dataset, 'pure_orh-scores'])
+    # p_orh_scores_fig_path = output_path / (p_orh_scores_title + '.png')
+    draw_hist(axs[1, 2], p_orh_scores, colors, labels, p_orh_scores_title)
+    
+    # fig.tight_layout()
+    plt.savefig(str(output_path / ('com_clas-' + args.dataset + '.png')))
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='compare diff clas')
+    parser.add_argument('--data_dir', type=str, default='./datasets')
+    parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
+    parser.add_argument('--id', type=str, default='cifar10')
+    parser.add_argument('--dataset', type=str, default='cifar10')
+    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--prefetch', type=int, default=4)
+    parser.add_argument('--ae', type=str, default='res_ae')
+    parser.add_argument('--ae_path', type=str, default='./outputs/res_ae/rec_best.pth')
+    parser.add_argument('--classifier', type=str, default='resnet18')
+    parser.add_argument('--pure_cla_path', type=str, default='./outputs/resnet18/cla_best.pth')
+    parser.add_argument('--or_cla_path', type=str, default='./outputs/resnet18_or/cla_best.pth')
+    parser.add_argument('--orh_cla_path', type=str, default='./outputs/resnet18_or_hybrid/cla_best.pth')
+    parser.add_argument('--gpu_idx', type=int, default=0)
+    
+    args = parser.parse_args()
+
+    main(args)
+    
+    
