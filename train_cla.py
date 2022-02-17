@@ -1,16 +1,13 @@
 import argparse
 import time
+import numpy as np
 from functools import partial
 from pathlib import Path
 import random
 import copy
 
 import torch
-import torch.nn as nn
-
 import torch.backends.cudnn as cudnn
-import numpy as np
-
 
 from datasets import get_dataset_info, get_transforms, get_dataloader
 from models import get_classifier
@@ -32,7 +29,7 @@ def init_seeds(seed):
 
 def main(args):
     init_seeds(args.seed)
-    
+     
     # store net and console log by training method
     exp_path = Path(args.output_dir) / args.output_sub_dir
     print('>>> Exp dir: {} '.format(str(exp_path)))
@@ -63,7 +60,7 @@ def main(args):
         shuffle=True
     )
 
-    val_loader = get_dataloader_default(
+    test_loader = get_dataloader_default(
         split='test',
         transform=val_transform,
         shuffle=False
@@ -75,30 +72,17 @@ def main(args):
     classifier = get_classifier(args.arch, num_classes)
 
     # ------------------------------------ Init Trainer ------------------------------------
-    if args.optimizer == 'sgd':
-        print('>>> Optimizer: {} | Lr: {:.4f} | Weight_decay: {:.4f} | Momentum: {:.4f}'.format(args.optimizer, args.lr, args.weight_decay, args.momentum))
-        optimizer = torch.optim.SGD(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
-    elif args.optimizer == 'adam':
-        betas = tuple([float(param) for param in args.betas])
-        print('>>> Optimizer: {} | Lr: {:.4f} | Weight_decay: {:.4f} | Betas: {}'.format(args.optimizer, args.lr, args.weight_decay, args.betas))
-        optimizer = torch.optim.Adam(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=betas)
-    else:
-        raise RuntimeError('---> invalid optimizer: {}'.format(args.optimizer))
+    optimizer = torch.optim.SGD(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     
-    if args.scheduler == 'lambdalr':
-        scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=lambda step: cosine_annealing(
-                step,
-                args.epochs * len(train_loader),
-                1,
-                1e-6 / args.lr
-            )
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lr_lambda=lambda step: cosine_annealing(
+            step,
+            args.epochs * len(train_loader),
+            1,
+            1e-6 / args.lr
         )
-    elif args.scheduler == 'none':
-        scheduler = None
-    else:
-        raise RuntimeError('---> invalid scheduler: {}'.format(args.scheduler))
+    )
     
     trainer = get_classifier_trainer(classifier, train_loader, optimizer, scheduler)
     
@@ -116,12 +100,12 @@ def main(args):
     evaluator = Evaluator(classifier)
     begin_time = time.time()
     
-    cla_best_state, last_state = {}, {}
+    last_state = {}
     
     for epoch in range(start_epoch, args.epochs+1):
     
         trainer.train_epoch()
-        val_metrics = evaluator.eval_classification(val_loader)
+        val_metrics = evaluator.eval_classification(test_loader)
         
         cla_best = val_metrics['cla_acc'] > best_cla_acc
         best_cla_acc = max(val_metrics['cla_acc'], best_cla_acc)
@@ -133,14 +117,14 @@ def main(args):
                 'state_dict': classifier.state_dict(),
                 'cla_acc': val_metrics['cla_acc']
             }
-
+        
         if cla_best:
             cla_best_state = {
-            'epoch': epoch,
-            'arch': args.arch,
-            'state_dict': copy.deepcopy(classifier.state_dict()),
-            'cla_acc': best_cla_acc
-        }
+                'epoch': epoch,
+                'arch': args.arch,
+                'state_dict': copy.deepcopy(classifier.state_dict()),
+                'cla_acc': best_cla_acc
+            }
         
         print(
             "---> Epoch {:4d} | Time {:5d}s".format(
@@ -162,16 +146,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Classifier')
     parser.add_argument('--seed', default=1, type=int,
                         help='seed for initialize training')
-    parser.add_argument('--arch', type=str, default='resnet18')
+    parser.add_argument('--arch', type=str, default='wide_resnet')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='resnet18')
-    parser.add_argument('--optimizer', type=str, default='sgd')
+    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
-    parser.add_argument('--betas', nargs='+', default=[0.9, 0.999])
     parser.add_argument('--momentum', type=float, default=0.9)
-    parser.add_argument('--scheduler', type=str, default='lambdalr')
-    parser.add_argument('--epochs', type=int, default=200)
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--data_dir', help='directory to store datasets', default='data/datasets')
     parser.add_argument('--dataset', type=str, default='cifar10')
     # parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365', 'isun'])

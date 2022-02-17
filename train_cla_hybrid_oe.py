@@ -2,7 +2,6 @@ import numpy as np
 import argparse
 import time
 import copy
-from functools import partial
 from pathlib import Path
 import random
 
@@ -10,9 +9,9 @@ import torch
 import torch.backends.cudnn as cudnn
 
 
-from datasets import get_dataset_info, get_transforms, get_hybrid_dataloader
+from datasets import get_dataset_info, get_transforms, get_dataloader, get_hybrid_dataloader
 from models import get_classifier
-from trainers import get_classifier_hybrid_trainer
+from trainers import get_classifier_hybrid_oe_trainer
 from evaluation import Evaluator
 from utils import setup_logger
 
@@ -26,7 +25,7 @@ def init_seeds(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
+    
 
 def main(args):
     init_seeds(args.seed)
@@ -38,33 +37,42 @@ def main(args):
 
     # record console output
     setup_logger(str(exp_path), 'console.log')
-
+    
     # ------------------------------------ Init Datasets ------------------------------------
     ## get dataset transform
     train_transform = get_transforms(args.dataset, stage='train')
     val_transform = get_transforms(args.dataset, stage='test')  # using train set's mean&std
-
-    print('>>> Dataset: {}'.format(args.dataset))
     
-    ## get dataloader
-    get_dataloader_default = partial(
-        get_hybrid_dataloader,
+    print('>>> ID-Train: {} | OOD-Train: {}'.format(args.dataset, args.ood_dataset))
+    
+    train_loader_id = get_hybrid_dataloader(
         root=args.data_dir,
         name=args.dataset,
+        split='train',
+        transform=train_transform,
         batch_size=args.batch_size,
+        shuffle=True,
         num_workers=args.prefetch
     )
     
-    train_loader = get_dataloader_default(
+    train_loader_ood = get_dataloader(
+        root=args.data_dir,
+        name=args.ood_dataset,
         split='train',
         transform=train_transform,
-        shuffle=True
+        batch_size=args.ood_batch_size,
+        shuffle=True,
+        num_workers=args.prefetch
     )
-
-    test_loader = get_dataloader_default(
+    
+    test_loader = get_hybrid_dataloader(
+        root=args.data_dir,
+        name=args.dataset,
         split='test',
         transform=val_transform,
-        shuffle=False
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.prefetch
     )
     
     # ------------------------------------ Init Classifier ------------------------------------
@@ -81,21 +89,21 @@ def main(args):
             classifier.load_state_dict(cla_params['state_dict'])
             print('>>> load pretrained classifier from {} (classification acc {:.4f}%)'.format(str(pretrain_path), cla_acc))
         else:
-            raise RuntimeError('<--- invalid pretrained classifier path: {}'.format(str(pretrain_path)))
-    
+            raise RuntimeError('<--- invalid pretrianed classifier path: {}'.format(str(pretrain_path)))
+        
     # ------------------------------------ Init Trainer ------------------------------------
     optimizer = torch.optim.SGD(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
         lr_lambda=lambda step: cosine_annealing(
             step,
-            args.epochs * len(train_loader),
+            args.epochs * len(train_loader_id),
             1,
             1e-6 / args.lr
         )
     )
-
-    trainer = get_classifier_hybrid_trainer(classifier, train_loader, optimizer, scheduler)
+    
+    trainer = get_classifier_hybrid_oe_trainer(classifier, train_loader_id, train_loader_ood, optimizer, scheduler)
     
     # move classifier to gpu device
     gpu_idx = int(args.gpu_idx)
@@ -199,15 +207,15 @@ if __name__ == '__main__':
     parser.add_argument('--pretrain_path', type=str, default='snapshots')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
     parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='tmp')
-    parser.add_argument('--optimizer', type=str, default='sgd')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)
-    parser.add_argument('--scheduler', type=str, default='lambdalr')
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--data_dir', help='directory to store datasets', default='data/datasets')
     parser.add_argument('--dataset', type=str, default='cifar10')
+    parser.add_argument('--ood_dataset', type=str, default='tinyimages')
     parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--ood_batch_size', type=int, default=512)
     parser.add_argument('--prefetch', type=int, default=4, help='number of dataloader workers')
     parser.add_argument('--gpu_idx', help='used gpu idx', type=int, default=0)
     args = parser.parse_args()

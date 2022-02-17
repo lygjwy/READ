@@ -35,9 +35,8 @@ class ClassifierTrainer():
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            if self.scheduler:
-                self.scheduler.step()
-                
+            self.scheduler.step()
+            
             _, pred = logit.max(dim=1)
             with torch.no_grad():
                 total_loss += loss.item()
