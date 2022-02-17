@@ -18,7 +18,7 @@ class ClassifierHybridOeTrainer():
         total, ori_correct, rec_correct = 0, 0, 0
         total_loss = 0.0
         
-        train_dataiter_id = iter(self.trian_loader_id)
+        train_dataiter_id = iter(self.train_loader_id)
         train_dataiter_ood = iter(self.train_loader_ood)
         
         for train_step in range(1, len(train_dataiter_id)):
@@ -35,7 +35,9 @@ class ClassifierHybridOeTrainer():
             except StopIteration:
                 train_dataiter_ood = iter(self.train_loader_ood)
                 ood_data = next(train_dataiter_ood)
-                
+            
+            ood_data = ood_data.cuda()
+            
             logits_oe = self.classifier(ood_data)
             loss_oe = -(logits_oe.mean(dim=1) - torch.logsumexp(logits_oe, dim=1)).mean()
 
@@ -73,5 +75,3 @@ class ClassifierHybridOeTrainer():
         }
         
         return metrics
-
-            

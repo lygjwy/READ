@@ -84,6 +84,8 @@ def main(args):
             raise RuntimeError('<--- invalid pretrained classifier path: {}'.format(str(pretrain_path)))
     
     # ------------------------------------ Init Trainer ------------------------------------
+    print('>>> Optimizer: SGD  | Scheduler: LambdaLR')
+    print('>>> Lr: {:.5f} | Weight_decay: {:.5f} | Momentum: {:.2f}'.format(args.lr, args.weight_decay, args.momentum))
     optimizer = torch.optim.SGD(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
@@ -192,18 +194,15 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Classifier with hybrid images')
-    parser.add_argument('--seed', default=1, type=int,
-                        help='seed for initialize training')
+    parser.add_argument('--seed', default=1, type=int, help='seed for initialize training')
     parser.add_argument('--arch', type=str, default='wide_resnet')
     parser.add_argument('--pretrained', action='store_true', default=False)
     parser.add_argument('--pretrain_path', type=str, default='snapshots')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
     parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='tmp')
-    parser.add_argument('--optimizer', type=str, default='sgd')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)
-    parser.add_argument('--scheduler', type=str, default='lambdalr')
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--data_dir', help='directory to store datasets', default='data/datasets')
     parser.add_argument('--dataset', type=str, default='cifar10')

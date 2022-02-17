@@ -92,6 +92,8 @@ def main(args):
             raise RuntimeError('<--- invalid pretrianed classifier path: {}'.format(str(pretrain_path)))
         
     # ------------------------------------ Init Trainer ------------------------------------
+    print('>>> Optimizer: SGD  | Scheduler: LambdaLR')
+    print('>>> Lr: {:.5f} | Weight_decay: {:.5f} | Momentum: {:.2f}'.format(args.lr, args.weight_decay, args.momentum))
     optimizer = torch.optim.SGD(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
@@ -199,9 +201,8 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Train Classifier with hybrid images')
-    parser.add_argument('--seed', default=1, type=int,
-                        help='seed for initialize training')
+    parser = argparse.ArgumentParser(description='Train Classifier with hybrid images & auxiliary ood images')
+    parser.add_argument('--seed', default=1, type=int, help='seed for initialize training')
     parser.add_argument('--arch', type=str, default='wide_resnet')
     parser.add_argument('--pretrained', action='store_true', default=False)
     parser.add_argument('--pretrain_path', type=str, default='snapshots')
@@ -213,7 +214,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--data_dir', help='directory to store datasets', default='data/datasets')
     parser.add_argument('--dataset', type=str, default='cifar10')
-    parser.add_argument('--ood_dataset', type=str, default='tinyimages')
+    parser.add_argument('--ood_dataset', type=str, default='ti_300k')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--ood_batch_size', type=int, default=512)
     parser.add_argument('--prefetch', type=int, default=4, help='number of dataloader workers')

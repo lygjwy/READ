@@ -34,6 +34,8 @@ class ClassifierOeTrainer():
                 train_dataiter_ood = iter(self.train_loader_ood)
                 ood_data = next(train_dataiter_ood)
             
+            ood_data = ood_data.cuda()
+            
             logits_oe = self.classifier(ood_data)
             loss_oe = -(logits_oe.mean(dim=1) - torch.logsumexp(logits_oe, dim=1)).mean()
 
@@ -52,7 +54,7 @@ class ClassifierOeTrainer():
                 correct += pred.eq(target).sum().item()
         
         # average on batch
-        print('[cla oe loss: {:.4f} | cla acc: {:.4f}%]'.format(total_loss / len(self.train_loader), 100. * correct / total))
+        print('[cla oe loss: {:.4f} | cla acc: {:.4f}%]'.format(total_loss / len(self.train_loader_id), 100. * correct / total))
         metrics = {
             'train_cla_oe_loss': total_loss / len(self.train_loader_id),
             'train_cla_acc': correct / total

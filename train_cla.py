@@ -72,8 +72,9 @@ def main(args):
     classifier = get_classifier(args.arch, num_classes)
 
     # ------------------------------------ Init Trainer ------------------------------------
+    print('>>> Optimizer: SGD  | Scheduler: LambdaLR')
+    print('>>> Lr: {:.5f} | Weight_decay: {:.5f} | Momentum: {:.2f}').format(args.lr, args.weight_decay, args.momentum)
     optimizer = torch.optim.SGD(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
-    
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
         lr_lambda=lambda step: cosine_annealing(

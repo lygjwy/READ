@@ -3,10 +3,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from .named_dataset_with_meta import NamedDatasetWithMeta
-from .named_corrupt_dataset_with_meta import NamedCorruptDatasetWithMeta
 from .named_or_dataset_with_meta import NamedOrDatasetWithMeta
-from .named_rotation_dataset_with_meta import NamedRotationDatasetWithMeta
-from .named_or_rotation_dataset_with_meta import NamedOrRotationDatasetWithMeta
 
 
 CIFAR100_CLASSES = [
@@ -128,52 +125,11 @@ def get_dataset(root, name, split, transform, target_transform=None):
     return dataset
 
 
-def get_corrupt_dataset(root, name, corrupt, severity, split, random, transform, target_transform=None):
-    dataset = NamedCorruptDatasetWithMeta(
-        root=root,
-        name=name,
-        corruption=corrupt,
-        severity=severity,
-        split=split,
-        random=random,
-        transform=transform,
-        target_transform=target_transform
-    )
-    
-    return dataset
-
-
 def get_hybrid_dataset(root, name, split, transform, target_transform=None):
     dataset = NamedOrDatasetWithMeta(
         root=root,
         name=name,
         split=split,
-        transform=transform,
-        target_transform=target_transform
-    )
-    
-    return dataset
-
-
-def get_auxiliary_dataset(root, name, split, random, transform, target_transform=None):
-    dataset = NamedRotationDatasetWithMeta(
-        root=root,
-        name=name,
-        split=split,
-        random=random,
-        transform=transform,
-        target_transform=target_transform
-    )
-    
-    return dataset
-
-
-def get_hybrid_auxiliary_dataset(root, name, split, random, transform, target_transform=None):
-    dataset = NamedOrRotationDatasetWithMeta(
-        root=root,
-        name=name,
-        split=split,
-        random=random,
         transform=transform,
         target_transform=target_transform
     )
@@ -198,27 +154,6 @@ def get_dataloader(root, name, split, transform, batch_size, shuffle, num_worker
         num_workers=num_workers,
         pin_memory=True
     )
-    
-    
-def get_corrupt_dataloader(root, name, corrupt, severity, split, random, transform, batch_size, shuffle, num_workers):
-    
-    ds = get_corrupt_dataset(
-        root=root,
-        name=name,
-        corrupt=corrupt,
-        severity=severity,
-        split=split,
-        random=random,
-        transform=transform 
-    )
-    
-    return DataLoader(
-        ds,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True
-    )
 
 
 def get_hybrid_dataloader(root, name, split, transform, batch_size, shuffle, num_workers):
@@ -233,44 +168,6 @@ def get_hybrid_dataloader(root, name, split, transform, batch_size, shuffle, num
     return DataLoader(
         ds,
         batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True
-    )
-    
-
-def get_auxiliary_dataloader(root, name, split, random, transform, batch_size, shuffle, num_workers):
-    
-    ds = get_auxiliary_dataset(
-        root=root,
-        name=name,
-        split=split,
-        random=random,
-        transform=transform
-    )
-    
-    return DataLoader(
-        ds,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True
-    )
-    
-
-def get_hybrid_auxiliary_dataloader(root, name, split, random, transform, batch_size, shuffle, num_workers):
-    
-    ds = get_hybrid_auxiliary_dataset(
-        root=root,
-        name=name,
-        split=split,
-        random=random,
-        transform=transform
-    )
-    
-    return DataLoader(
-        ds,
-        batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=True
