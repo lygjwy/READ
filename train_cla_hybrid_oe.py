@@ -9,7 +9,7 @@ import torch
 import torch.backends.cudnn as cudnn
 
 
-from datasets import get_dataset_info, get_transforms, get_dataloader, get_hybrid_dataloader
+from datasets import get_dataset_info, get_transforms, get_ood_transforms, get_dataloader, get_hybrid_dataloader
 from models import get_classifier
 from trainers import get_classifier_hybrid_oe_trainer
 from evaluation import Evaluator
@@ -41,6 +41,7 @@ def main(args):
     # ------------------------------------ Init Datasets ------------------------------------
     ## get dataset transform
     train_transform = get_transforms(args.dataset, stage='train')
+    ood_train_transform = get_ood_transforms(args.dataset, args.ood_dataset, stage='train')
     val_transform = get_transforms(args.dataset, stage='test')  # using train set's mean&std
     
     print('>>> ID-Train: {} | OOD-Train: {}'.format(args.dataset, args.ood_dataset))
@@ -59,7 +60,7 @@ def main(args):
         root=args.data_dir,
         name=args.ood_dataset,
         split='train',
-        transform=train_transform,
+        transform=ood_train_transform,
         batch_size=args.ood_batch_size,
         shuffle=True,
         num_workers=args.prefetch
@@ -90,7 +91,7 @@ def main(args):
             print('>>> load pretrained classifier from {} (classification acc {:.4f}%)'.format(str(pretrain_path), cla_acc))
         else:
             raise RuntimeError('<--- invalid pretrianed classifier path: {}'.format(str(pretrain_path)))
-        
+    
     # ------------------------------------ Init Trainer ------------------------------------
     print('>>> Optimizer: SGD  | Scheduler: LambdaLR')
     print('>>> Lr: {:.5f} | Weight_decay: {:.5f} | Momentum: {:.2f}'.format(args.lr, args.weight_decay, args.momentum))

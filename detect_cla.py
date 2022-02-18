@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
-from datasets import get_transforms, get_dataset_info, get_dataloader
+from datasets import get_transforms, get_ood_transforms, get_dataset_info, get_dataloader
 from models import get_classifier
 from evaluation import compute_all_metrics
 
@@ -62,16 +62,16 @@ def main(args):
         get_dataloader,
         root=args.data_dir,
         split='test',
-        transform=test_transform,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.prefetch
     )
     
-    id_loader = get_dataloader_default(name=args.id)
+    id_loader = get_dataloader_default(name=args.id, transform=test_transform)
     ood_loaders = []
     for ood in args.oods:
-        ood_loaders.append(get_dataloader_default(name=ood))
+        ood_test_transform = get_ood_transforms(args.id, ood, 'test')
+        ood_loaders.append(get_dataloader_default(name=ood, transform=ood_test_transform))
     
     #  load classifier
     num_classes = len(get_dataset_info(args.id, 'classes'))
@@ -82,7 +82,7 @@ def main(args):
         cla_params = torch.load(str(classifier_path))
         cla_acc = cla_params['cla_acc']
         classifier.load_state_dict(cla_params['state_dict'])
-        print('>>> load classifier from {} (classifiy acc {:.4f})'.format(str(classifier_path), cla_acc))
+        print('>>> load classifier from {} (classifiy acc {:.4f}%)'.format(str(classifier_path), cla_acc))
     else:
         raise RuntimeError('<--- invalid classifier path: {}'.format(str(classifier_path)))
     

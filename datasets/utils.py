@@ -1,4 +1,3 @@
-import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
@@ -57,6 +56,7 @@ class Convert():
     def __call__(self, image):
         return image.convert(self.mode)
 
+
 def get_normal_transform(name):
     mean, std = get_dataset_info(name, 'mean_and_std')
     
@@ -64,7 +64,7 @@ def get_normal_transform(name):
         transforms.ToTensor(),
         transforms.Normalize(mean, std)
     ])
-    
+
 
 def get_ae_normal_transform():
     
@@ -85,6 +85,7 @@ def get_ae_transform(stage):
     elif stage == 'test':
         return transforms.Compose([
             # Convert(color_mode),
+            transforms.Resize(32),
             transforms.CenterCrop(32),
             transforms.ToTensor()
         ])
@@ -96,7 +97,6 @@ def get_transforms(name, stage):
     mean, std = get_dataset_info(name, 'mean_and_std')
     if stage == 'train':
         return transforms.Compose([
-            transforms.CenterCrop(32),
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, padding=4),
             transforms.ToTensor(),
@@ -104,12 +104,37 @@ def get_transforms(name, stage):
         ])
     elif stage == 'test':
         return transforms.Compose([
-            transforms.CenterCrop(32),
             transforms.ToTensor(),
             transforms.Normalize(mean, std)
         ])
     else:
         raise Exception('---> Dataset Stage: {} invalid'.format(stage))
+
+
+def get_ood_transforms(id, ood, stage):
+    mean, std = get_dataset_info(id, 'mean_and_std')
+    
+    if stage == 'train':
+        ood_transforms = {
+            'ti_300k': [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor(), transforms.Normalize(mean, std)]
+        }
+    elif stage == 'test':
+        ood_transforms = {
+            'svhn': [transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'places365_10k': [transforms.Resize(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'lsunc': [transforms.CenterCrop(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'lsunr': [transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'tinc': [transforms.CenterCrop(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'tinr': [transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'dtd': [transforms.Resize(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'isun': [transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'cifar10': [transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'cifar100': [transforms.ToTensor(), transforms.Normalize(mean, std)]
+        }
+    else:
+        raise Exception('---> Dataset Stage: {} invalid'.format(stage))
+    
+    return transforms.Compose(ood_transforms[ood])
 
 
 # get common dataset
