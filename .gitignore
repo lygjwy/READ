@@ -3,6 +3,8 @@ __pycache__/
 assets/*
 snapshots/
 logs/
+logs_tmp/
+logs_temp/
 outputs/
 tmp/
 temp/
