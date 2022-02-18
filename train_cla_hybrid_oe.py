@@ -140,9 +140,9 @@ def main(args):
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': classifier.state_dict(),
-                'ori_cla_acc': val_metrics['ori_test_accuracy'],
+                'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'cla_acc': val_metrics['hybrid_test_accuracy']
+                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
             }
 
         if ori_cla_best:
@@ -150,9 +150,9 @@ def main(args):
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': copy.deepcopy(classifier.state_dict()),
-                'ori_cla_acc': val_metrics['ori_test_accuracy'],
+                'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'cla_acc': val_metrics['hybrid_test_accuracy']
+                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
             }
         
         if rec_cla_best:
@@ -160,9 +160,9 @@ def main(args):
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': copy.deepcopy(classifier.state_dict()),
-                'ori_cla_acc': val_metrics['ori_test_accuracy'],
+                'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'cla_acc': val_metrics['hybrid_test_accuracy']
+                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
             }
             
         if hybrid_cla_best:
@@ -170,9 +170,9 @@ def main(args):
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': copy.deepcopy(classifier.state_dict()),
-                'ori_cla_acc': val_metrics['ori_test_accuracy'],
+                'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'cla_acc': val_metrics['hybrid_test_accuracy']
+                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
             }
 
         print(
@@ -193,9 +193,9 @@ def main(args):
     last_path = exp_path / 'last.pth'
     torch.save(last_state, str(last_path))
     print('---> Best ori cla acc: {:.4f}% | rec cla acc: {:.4f}% | cla acc: {:.4f}%'.format(
-        100. * ori_cla_best_acc,
-        100. * rec_cla_best_acc,
-        100. * hybrid_cla_best_acc
+        ori_cla_best_acc,
+        rec_cla_best_acc,
+        hybrid_cla_best_acc
         )
     )
 

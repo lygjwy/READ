@@ -145,8 +145,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Classifier')
-    parser.add_argument('--seed', default=1, type=int,
-                        help='seed for initialize training')
+    parser.add_argument('--seed', default=1, type=int, help='seed for initialize training')
     parser.add_argument('--arch', type=str, default='wide_resnet')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
     parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet')

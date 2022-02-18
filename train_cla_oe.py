@@ -85,7 +85,7 @@ def main(args):
             cla_params = torch.load(str(pretrain_path))
             cla_acc = cla_params['cla_acc']
             classifier.load_state_dict(cla_params['state_dict'])
-            print('>>> load pretrained classifier from {} (classification acc {:.4f}%)'.format(str(pretrain_path), cla_acc))
+            print('>>> load pretrained classifier from {} (classification acc {:.4f}%)'.format(str(pretrain_path), 100. * cla_acc))
         else:
             raise RuntimeError('<--- invalid pretrained classifier path: {}'.format(str(pretrain_path)))
     
