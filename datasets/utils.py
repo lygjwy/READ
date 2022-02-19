@@ -1,9 +1,15 @@
+import numpy as np
+
+import torch
+from torch.utils.data import Dataset
+from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from .named_dataset_with_meta import NamedDatasetWithMeta
 from .named_or_dataset_with_meta import NamedOrDatasetWithMeta
 
+from .transforms import get_shift_transform
 
 CIFAR100_CLASSES = [
     'apple', 'aquarium_fish', 'baby', 'bear', 'beaver', 'bed', 'bee', 'beetle', 'bicycle', 'bottle', 
@@ -57,36 +63,15 @@ class Convert():
         return image.convert(self.mode)
 
 
-def get_normal_transform(name):
-    mean, std = get_dataset_info(name, 'mean_and_std')
-    
-    return transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std)
-    ])
-
-
-def get_ae_normal_transform():
-    
-    return transforms.Compose([
-        transforms.ToTensor()
-    ])
-
-
-def get_ae_transform(stage):    
+def get_ae_transforms(stage):
     if stage == 'train':
         return transforms.Compose([
-            # Convert(color_mode),
-            transforms.CenterCrop(32),
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, padding=4),
             transforms.ToTensor()
         ])
     elif stage == 'test':
         return transforms.Compose([
-            # Convert(color_mode),
-            transforms.Resize(32),
-            transforms.CenterCrop(32),
             transforms.ToTensor()
         ])
     else:
@@ -111,6 +96,31 @@ def get_transforms(name, stage):
         raise Exception('---> Dataset Stage: {} invalid'.format(stage))
 
 
+def get_ae_ood_transforms(ood, stage):
+    
+    if stage == 'train':
+        ood_transforms = {
+            'ti_300k': [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor()]
+        }
+    elif stage == 'test':
+        ood_transforms = {
+            'svhn': [transforms.ToTensor()],
+            'places365_10k': [transforms.Resize(32), transforms.CenterCrop(32), transforms.ToTensor()],
+            'lsunc': [transforms.CenterCrop(32), transforms.ToTensor()],
+            'lsunr': [transforms.ToTensor()],
+            'tinc': [transforms.CenterCrop(32), transforms.ToTensor()],
+            'tinr': [transforms.ToTensor()],
+            'dtd': [transforms.Resize(32), transforms.CenterCrop(32), transforms.ToTensor()],
+            'isun': [transforms.ToTensor()],
+            'cifar10': [transforms.ToTensor()],
+            'cifar100': [transforms.ToTensor()]
+        }
+    else:
+        raise Exception('---> Dataset Stage: {} invalid'.format(stage))
+    
+    return transforms.Compose(ood_transforms[ood])
+
+
 def get_ood_transforms(id, ood, stage):
     mean, std = get_dataset_info(id, 'mean_and_std')
     
@@ -121,12 +131,12 @@ def get_ood_transforms(id, ood, stage):
     elif stage == 'test':
         ood_transforms = {
             'svhn': [transforms.ToTensor(), transforms.Normalize(mean, std)],
-            'places365_10k': [transforms.Resize(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'places365_10k': [transforms.Resize(32), transforms.CenterCrop(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
             'lsunc': [transforms.CenterCrop(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
             'lsunr': [transforms.ToTensor(), transforms.Normalize(mean, std)],
             'tinc': [transforms.CenterCrop(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
             'tinr': [transforms.ToTensor(), transforms.Normalize(mean, std)],
-            'dtd': [transforms.Resize(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
+            'dtd': [transforms.Resize(32), transforms.CenterCrop(32), transforms.ToTensor(), transforms.Normalize(mean, std)],
             'isun': [transforms.ToTensor(), transforms.Normalize(mean, std)],
             'cifar10': [transforms.ToTensor(), transforms.Normalize(mean, std)],
             'cifar100': [transforms.ToTensor(), transforms.Normalize(mean, std)]
@@ -197,3 +207,63 @@ def get_hybrid_dataloader(root, name, split, transform, batch_size, shuffle, num
         num_workers=num_workers,
         pin_memory=True
     )
+
+
+# -------- Validation OOD datasets --------
+def get_uniform_noise_dataset(num):
+    dummpy_targets = torch.ones(num)
+    uniform_noise_data = torch.from_numpy(
+        np.random.uniform(size=(num, 3, 32, 32), low=-1.0, high=1.0).astype(np.float32))
+    
+    return TensorDataset(uniform_noise_data, dummpy_targets)
+
+def get_uniform_noise_dataloader(num, batch_size, shuffle, num_workers):
+    uniform_noise_dataset = get_uniform_noise_dataset(num)
+    uniform_noise_dataset.name = 'uniform_noise'
+    uniform_noise_dataset.labeled = True
+    
+    return DataLoader(
+        uniform_noise_dataset, 
+        batch_size=batch_size, 
+        shuffle=shuffle, 
+        num_workers=num_workers,
+        pin_memory=True
+    )
+    
+
+class AvgOfPair(Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.shuffle_indices = np.arange(len(dataset))
+        np.random.shuffle(self.shuffle_indices)
+        self.labeled = False
+        
+    def __getitem__(self, i):
+        random_idx = np.random.choice(len(self.dataset))
+        while random_idx == i:
+            random_idx = np.random.choice(len(self.dataset))
+            
+        return self.dataset[i][0] / 2. + self.dataset[random_idx][0] / 2.
+    
+    def __len__(self):
+        return len(self.dataset)
+
+
+class GeoMeanOfPair(Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.mean, self.std = get_dataset_info(dataset.name, 'mean_and_std')
+        self.shuffle_indices = np.arange(len(dataset))
+        np.random.shuffle(self.shuffle_indices)
+        self.labeled = False
+        
+    def __getitem__(self, i):
+        random_idx = np.random.choice(len(self.dataset))
+        while random_idx == i:
+            random_idx = np.random.choice(len(self.dataset))
+        
+        return transforms.Normalize(self.mean, self.std)(torch.sqrt(self.dataset[i][0] * self.dataset[random_idx][0]))
+    
+    def __len__(self):
+        return len(self.dataset)
+    

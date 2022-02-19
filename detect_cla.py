@@ -6,6 +6,7 @@ import argparse
 import matplotlib.pyplot as plt
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
@@ -14,31 +15,115 @@ from models import get_classifier
 from evaluation import compute_all_metrics
 
 
-def get_cla_msp_kl(classifier, data_loader):
+def get_msp_scores(classifier, data_loader):
     classifier.eval()
     
-    cla_msp, cla_kl = [], []
-    
+    msp_scores = []
     for sample in data_loader:
-        
-        if type(sample) == list:
-                # labeled
-                data, _ = sample
+        if data_loader.dataset.labeled:
+            data, _ = sample
         else:
-            # unlabeled
             data = sample
         data = data.cuda()
         
         with torch.no_grad():
             logit = classifier(data)
-        softmax = torch.softmax(logit, dim=1)
-        cla_msp.extend(torch.max(softmax, dim=1)[0].tolist())
         
-        uniform_dist = torch.ones_like(softmax) * (1 / softmax.shape[1])
-        cla_kl.extend(torch.sum(F.kl_div(softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
+            softmax = torch.softmax(logit, dim=1)
+            msp_scores.extend(torch.max(softmax, dim=1)[0].tolist())
+            
+    return msp_scores
+
+
+def get_kl_scores(classifier, data_loader):
+    classifier.eval()
     
-    return cla_msp, cla_kl
+    kl_scores = []
     
+    for sample in data_loader:
+        if data_loader.dataset.labeled:
+            data, _ = sample
+        else:
+            data = sample
+        data = data.cuda()
+        
+        with torch.no_grad():
+            logit = classifier(data)
+            softmax = torch.softmax(logit, dim=1)
+        
+            uniform_dist = torch.ones_like(softmax) * (1 / softmax.shape[1])
+            kl_scores.extend(torch.sum(F.kl_div(softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
+    
+    return kl_scores
+
+
+def get_odin_scores(classifier, data_loader, temperature=1000.0, magnitude=0.0014):
+    classifier.eval()
+    
+    odin_scores = []
+    
+    for sample in data_loader:
+        if data_loader.dataset.labeled:
+            data, _ = sample
+        else:
+            data = sample
+        data = data.cuda()
+        
+        data.requires_grad = True
+        logit = classifier(data)
+        pred = logit.detach().argmax(axis=1)
+        logit = logit / temperature
+        criterion = nn.CrossEntropyLoss()
+        loss = criterion(logit, pred)
+        loss.backward()
+        
+        # normalizing the gradient to binary in {-1, 1}
+        gradient = torch.ge(data.grad.detach(), 0)
+        gradient = (gradient.float() - 0.5) * 2
+        
+        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
+        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
+        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
+        
+        tmpInputs = torch.add(data.detach(), -magnitude, gradient)
+        logit = classifier(tmpInputs)
+        logit = logit / temperature
+        # calculating the confidence after add the perturbation
+        nnOutput = logit.detach()
+        nnOutput = nnOutput - nnOutput.max(dim=1, keepdims=True).values
+        nnOutput = nnOutput.exp() / nnOutput.exp().sum(dim=1, keepdims=True)
+        
+        odin_scores.extend(nnOutput.max(dim=1)[0].tolist())
+    
+    return odin_scores
+
+
+def get_energy_scores(classifier, data_loader, temperature=1.0):
+    classifier.eval()
+    
+    energy_scores = []
+         
+    for sample in data_loader:
+        if data_loader.dataset.labeled:
+            data, _ = sample
+        else:
+            data = sample
+        data = data.cuda()
+        
+        with torch.no_grad():
+            logit = classifier(data)
+            energy_scores.extend((temperature * torch.logsumexp(logit / temperature, dim=1)).tolist())
+    
+    return energy_scores
+
+
+scores_dic = {
+    'msp': get_msp_scores,
+    'kl': get_kl_scores,
+    'odin': get_odin_scores,
+    'energy': get_energy_scores
+}
+
 
 def draw_hist(data, colors, labels, title, fig_path):
     plt.clf()
@@ -92,46 +177,37 @@ def main(args):
         classifier.cuda()
     cudnn.benchmark = True
     
-    msp_result_dic_list, kl_result_dic_list = [], []
+    get_scores = scores_dic[args.scores]
+    result_dic_list = []
     
-    id_msp, id_kl = get_cla_msp_kl(classifier, id_loader)
-    id_label = np.zeros(len(id_msp))
+    id_scores = get_scores(classifier, id_loader)
+    id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
-        msp_result_dic, kl_result_dic = {'name': ood_loader.dataset.name}, {'name': ood_loader.dataset.name}
+        print(ood_loader.dataset.name)
+        result_dic = {'name': ood_loader.dataset.name}
         
-        ood_msp, ood_kl = get_cla_msp_kl(classifier, ood_loader)
-        ood_label = np.ones(len(ood_msp))
+        ood_scores = get_scores(classifier, ood_loader)
+        ood_label = np.ones(len(ood_scores))
         # detect ood
-        msps, kls = np.concatenate([id_msp, ood_msp]), np.concatenate([id_kl, ood_kl])
+        scores = np.concatenate([id_scores, ood_scores])
         labels = np.concatenate([id_label, ood_label])
         
-        msp_result_dic['fpr_at_tpr'], msp_result_dic['auroc'], msp_result_dic['aupr_in'], msp_result_dic['aupr_out'] = compute_all_metrics(msps, labels)
-        kl_result_dic['fpr_at_tpr'], kl_result_dic['auroc'], kl_result_dic['aupr_in'], kl_result_dic['aupr_out'] = compute_all_metrics(kls, labels)
-    
-        msp_result_dic_list.append(msp_result_dic)
-        kl_result_dic_list.append(kl_result_dic)
+        result_dic['fpr_at_tpr'], result_dic['auroc'], result_dic['aupr_in'], result_dic['aupr_out'] = compute_all_metrics(scores, labels)
+        result_dic_list.append(result_dic)
         
         # plot hist
-        hist_msps = [id_msp, ood_msp]
-        hist_kls = [id_kl, ood_kl]
-        colors = ['lime', 'cyan']
+        hist_scores = [id_scores, ood_scores]
+        colors = ['lime', 'red']
         labels = ['id',  'ood']
-        msp_title = '-'.join([ood_loader.dataset.name, args.id, 'msp'])
-        msp_fig_path = output_path / (msp_title + '.png')
-        kl_title = '-'.join([ood_loader.dataset.name, args.id, 'kl'])
-        kl_fig_path = output_path / (kl_title + '.png')
-        draw_hist(hist_msps, colors, labels, msp_title, msp_fig_path)
-        draw_hist(hist_kls, colors, labels, kl_title, kl_fig_path)
-        
-    # save result
-    msp_result = pd.DataFrame(msp_result_dic_list)
-    msp_log_path = output_path / 'msp.csv'
-    msp_result.to_csv(str(msp_log_path), index=False, header=True)
+        title = '-'.join([ood_loader.dataset.name, args.id, args.scores])
+        fig_path = output_path / (title + '.png')
+        draw_hist(hist_scores, colors, labels, title, fig_path)
     
-    kl_result = pd.DataFrame(kl_result_dic_list)
-    kl_log_path = output_path / 'kl.csv'
-    kl_result.to_csv(str(kl_log_path), index=False, header=True)
+    # save result
+    result = pd.DataFrame(result_dic_list)
+    log_path = output_path / (args.scores + '.csv')
+    result.to_csv(str(log_path), index=False, header=True)
 
 
 if __name__ == '__main__':
@@ -141,6 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
     parser.add_argument('--id', type=str, default='cifar10')
     parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365_10k', 'isun'])
+    parser.add_argument('--scores', type=str, default='msp')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--classifier', type=str, default='wide_resnet')
