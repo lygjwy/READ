@@ -76,7 +76,7 @@ def get_ood_val_loader(name, mean, std, get_dataloader_default):
             transforms.Normalize(mean, std)
         ])
     
-    ood_val_loader = get_dataloader_default(transform=transform)
+    ood_val_loader = get_dataloader_default(name='cifar100', transform=transform)
     
     return ood_val_loader
 
@@ -88,13 +88,12 @@ def main(args):
     get_dataloader_default = partial(
         get_dataloader,
         root=args.data_dir,
-        name=args.id,
         split='test',
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.prefetch
     )
-    id_loader = get_dataloader_default(transform=test_transform)
+    id_loader = get_dataloader_default(name=args.id, transform=test_transform)
     mean, std = get_dataset_info(args.id, 'mean_and_std')
     
     ood_loaders = []
@@ -102,7 +101,7 @@ def main(args):
     uniform_noise_loader = get_uniform_noise_dataloader(10000, args.batch_size, False, args.prefetch)
     ood_loaders.append(uniform_noise_loader)
     
-    id_dataset = get_dataset(root=args.data_dir, name=args.id, split='test', transform=test_transform)
+    id_dataset = get_dataset(root=args.data_dir, name='cifar100', split='test', transform=test_transform)
     avg_pair_loader = DataLoader(
         AvgOfPair(id_dataset),
         batch_size=args.batch_size,
@@ -112,7 +111,7 @@ def main(args):
     )
     ood_loaders.append(avg_pair_loader)
     
-    id_dataset = get_dataset(root=args.data_dir, name=args.id, split='test', transform=transforms.ToTensor())
+    id_dataset = get_dataset(root=args.data_dir, name='cifar100', split='test', transform=transforms.ToTensor())
     geo_mean_loader = DataLoader(
         GeoMeanOfPair(id_dataset),
         batch_size=args.batch_size,
@@ -185,7 +184,8 @@ def main(args):
             np.mean(aupr_outs)
         )
     )
-    
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ID & OOD-val to tune hyper-parameter')
     parser.add_argument('--data_dir', type=str, default='./datasets')

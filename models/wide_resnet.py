@@ -91,6 +91,26 @@ class WideResNet(nn.Module):
         out = out.view(-1, self.nChannels)
         return self.fc(out)
     
-
+    def intermediate_forward(self, x, layer_index):
+        out = self.conv1(x)
+        out = self.block1(out)
+        out = self.block2(out)
+        out = self.block3(out)
+        out = self.relu(self.bn1(out))
+        return out
+    
+    def feature_list(self, x):
+        out_list = []
+        out = self.conv1(x)
+        out = self.block1(out)
+        out = self.block2(out)
+        out = self.block3(out)
+        out = self.relu(self.bn1(out))
+        out_list.append(out)
+        out = F.avg_pool2d(out, 8)
+        out = out.view(-1, self.nChannels)
+        return self.fc(out), out_list
+    
+    
 def get_wrn(num_classes, layers, widen_factor, drop_rate):
     return WideResNet(layers, num_classes, widen_factor, drop_rate)
