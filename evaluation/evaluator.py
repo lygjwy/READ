@@ -71,6 +71,41 @@ class Evaluator():
 
         return metrics
     
+    def eval_deconf_classification(self, data_loader):
+        self.net.eval()
+        
+        total = 0
+        correct = 0
+        cla_total_loss = 0.0
+        
+        with torch.no_grad():
+            for sample in data_loader:
+                data, target = sample
+                data, target = data.cuda(), target.cuda()
+                logit, _, _ = self.net(data)
+                cla_loss = F.cross_entropy(logit, target)
+            
+                cla_total_loss += cla_loss.item()
+                
+                pred = logit.data.max(dim=1)[1]
+                total += target.size(dim=0)
+                correct += pred.eq(target.data).sum().item()
+
+        # average on batch
+        print("[cla_loss: {:.4f} | cla_acc: {:.4f}%]".format(
+                cla_total_loss / len(data_loader),
+                100. * correct / total
+            )
+        )
+        
+        metrics = {
+            'cla_acc': 100. * correct / total,
+            'cla_loss': cla_total_loss / len(data_loader)
+        }
+
+        return metrics
+    
+    
     def eval_co_classification(self, data_loader):
         self.net.eval()
         

@@ -80,7 +80,7 @@ class NamedDatasetWithMeta(VisionDataset):
         else:
             self.labeled = False
             # raise RuntimeError('---> Dataset classes.txt not exist')
-            print('---> dataset without label')
+            # print('---> dataset without label')
             classes = None
             class_to_idx = None
 

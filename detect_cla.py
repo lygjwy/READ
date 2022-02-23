@@ -1,4 +1,3 @@
-from random import sample
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -6,11 +5,11 @@ from functools import partial
 import argparse
 import matplotlib.pyplot as plt
 import sklearn.covariance
-from sklearn.multioutput import ClassifierChain
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 
 from datasets import get_transforms, get_ood_transforms, get_dataset_info, get_dataloader
@@ -60,8 +59,9 @@ def get_kl_scores(classifier, data_loader):
     return kl_scores
 
 
-def get_odin_scores(classifier, data_loader, temperature=1000, magnitude=0.0014):
+def get_odin_scores(classifier, data_loader, temperature=1000.0, magnitude=0.0014):
     classifier.eval()
+    
     odin_scores = []
     
     for sample in data_loader:
@@ -71,24 +71,21 @@ def get_odin_scores(classifier, data_loader, temperature=1000, magnitude=0.0014)
             data = sample
         data = data.cuda()
         
-        data.requires_grad=True
+        data.requires_grad = True
         logit = classifier(data)
-        
-        criterion = nn.CrossEntropyLoss()
-        
         pred = logit.detach().argmax(axis=1)
         logit = logit / temperature
-        
+        criterion = nn.CrossEntropyLoss()
         loss = criterion(logit, pred)
         loss.backward()
         
         # normalizing the gradient to binary in {-1, 1}
-        gradient = torch.ge(data.grad.data, 0)
+        gradient = torch.ge(data.grad.detach(), 0)
         gradient = (gradient.float() - 0.5) * 2
         
-        gradient[:, 0] = (gradient[:, 0]) / (63.0 / 255.0)
-        gradient[:, 1] = (gradient[:, 1]) / (62.1 / 255.0)
-        gradient[:, 2] = (gradient[:, 2]) / (66.7 / 255.0)
+        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
+        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
+        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
         
         tmpInputs = torch.add(data.detach(), -magnitude, gradient)
         logit = classifier(tmpInputs)
@@ -105,7 +102,7 @@ def get_odin_scores(classifier, data_loader, temperature=1000, magnitude=0.0014)
 
 def sample_estimator(classifier, data_loader, num_classes, feature_list):
     classifier.eval()
-    group_lasso = sklearn.covariance.EmpiricalCovariance(assume_centered=True)
+    group_lasso = sklearn.covariance.EmpiricalCovariance(assume_centered=False)
     correct, total = 0, 0
     
     num_output = len(feature_list)
@@ -122,7 +119,7 @@ def sample_estimator(classifier, data_loader, num_classes, feature_list):
         data, target = data.cuda(), target.cuda()
         total += target.size(0)
         
-        output, out_features = classifier.feature_list()
+        output, out_features = classifier.feature_list(data)
         
         # get hidden features
         for i in range(num_output):
@@ -153,7 +150,7 @@ def sample_estimator(classifier, data_loader, num_classes, feature_list):
     for num_feature in feature_list:
         tmp_list = torch.Tensor(num_classes, int(num_feature)).cuda()
         for j in range(num_classes):
-            tmp_list = torch.mean(list_features[out_count][j], 0)
+            tmp_list[j] = torch.mean(list_features[out_count][j], 0)
         category_sample_mean.append(tmp_list)
         out_count += 1
     
@@ -171,8 +168,8 @@ def sample_estimator(classifier, data_loader, num_classes, feature_list):
         tmp_precision = group_lasso.precision_
         tmp_precision = torch.from_numpy(tmp_precision).float().cuda()
         precision.append(tmp_precision)
-        
-    print('---> Training acc: {:.2f}%'.format(100. * correct / total))
+       
+    # print('---> Training acc: {:.2f}%'.format(100. * correct / total))
     
     return category_sample_mean, precision
 
@@ -189,6 +186,7 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         data = data.cuda()
         
         data.requires_grad = True 
+        
         out_features = classifier.intermediate_forward(data, layer_index)
         out_features = out_features.view(out_features.size(0), out_features.size(1), -1)
         out_features = torch.mean(out_features, 2)
@@ -207,6 +205,7 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         # Input precessing
         sample_pred = gaussian_score.max(1)[1]
         category_sample_mean = sample_mean[layer_index].index_select(0, sample_pred)
+        
         zero_f = out_features - category_sample_mean
         pure_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
         loss = torch.mean(-pure_gau)
@@ -214,10 +213,11 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         
         gradient = torch.ge(data.grad.data, 0)
         gradient = (gradient.float() - 0.5) * 2
-        gradient.index_copy_(1, torch.LongTensor([0]).cuda(), gradient.index_select(1, torch.LongTensor([0]).cuda()) / (63.0/255.0))
-        gradient.index_copy_(1, torch.LongTensor([1]).cuda(), gradient.index_select(1, torch.LongTensor([1]).cuda()) / (62.1/255.0))
-        gradient.index_copy_(1, torch.LongTensor([2]).cuda(), gradient.index_select(1, torch.LongTensor([2]).cuda()) / (66.7/255.0))
-
+        
+        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
+        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
+        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
+        
         tmpInputs = torch.add(data.data, -magnitude, gradient)
         with torch.no_grad():
             noise_out_features = classifier.intermediate_forward(tmpInputs, layer_index)
@@ -233,9 +233,8 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
             else:
                 noise_gaussian_score = torch.cat((noise_gaussian_score, term_gau.view(-1, 1)), 1)
         
-        #  question? 
         noise_gaussian_score, _ = torch.max(noise_gaussian_score, dim=1)
-        maha_scores.extend(-noise_gaussian_score.tolist())
+        maha_scores.extend(noise_gaussian_score.tolist())
         
     return maha_scores
 
@@ -284,7 +283,7 @@ def main(args):
     print('>>> Log dir: {}'.format(str(output_path)))
     output_path.mkdir(parents=True, exist_ok=True)
     
-    test_transform = get_transforms(args.id, stage='test')    
+    test_transform = get_transforms(args.id, stage='test')
     
     get_dataloader_default = partial(
         get_dataloader,
@@ -332,7 +331,7 @@ def main(args):
     
         sample_mean, precision = sample_estimator(classifier, id_loader, num_classes, feature_list)
         
-        id_scores = get_maha_scores(classifier, id_loader, num_classes, sample_mean, precision, 0, args.magnitude)
+        id_scores = get_maha_scores(classifier, id_loader, num_classes, sample_mean, precision, num_output - 1, args.magnitude)
     else:
         id_scores = get_scores(classifier, id_loader)
     
@@ -373,8 +372,8 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Reconstruciton Detect')
-    parser.add_argument('--data_dir', type=str, default='./datasets')
+    parser = argparse.ArgumentParser(description='detect ood')
+    parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
     parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
     parser.add_argument('--id', type=str, default='cifar10')
@@ -387,7 +386,7 @@ if __name__ == '__main__':
     parser.add_argument('--classifier', type=str, default='wide_resnet')
     parser.add_argument('--classifier_path', type=str, default='./snapshots/p.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
-    
+
     args = parser.parse_args()
 
     main(args)

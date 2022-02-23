@@ -1,4 +1,5 @@
 import math
+from xml.etree.ElementInclude import include
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -51,8 +52,9 @@ class NetworkBlock(nn.Module):
     
     
 class WideResNet(nn.Module):
-    def __init__(self, depth, num_classes, widen_factor=1, dropRate=0.0):
+    def __init__(self, depth, num_classes, widen_factor=1, dropRate=0.0, include_top=True):
         super(WideResNet, self).__init__()
+        self.include_top = include_top
         nChannels = [16, 16 * widen_factor, 32 * widen_factor, 64 * widen_factor]
         assert ((depth - 4) % 6 == 0)
         n = (depth - 4) // 6
@@ -80,7 +82,7 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
-            
+        
     def forward(self, x):
         out = self.conv1(x)
         out = self.block1(out)
@@ -89,7 +91,10 @@ class WideResNet(nn.Module):
         out = self.relu(self.bn1(out))
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.nChannels)
-        return self.fc(out)
+        if self.include_top:
+            # whether to contain classify head, default False
+            out = self.fc(out)
+        return out
     
     def intermediate_forward(self, x, layer_index):
         out = self.conv1(x)
@@ -111,6 +116,6 @@ class WideResNet(nn.Module):
         out = out.view(-1, self.nChannels)
         return self.fc(out), out_list
     
-    
-def get_wrn(num_classes, layers, widen_factor, drop_rate):
-    return WideResNet(layers, num_classes, widen_factor, drop_rate)
+
+def get_wrn(num_classes, layers, widen_factor, drop_rate, include_top=True):
+    return WideResNet(layers, num_classes, widen_factor, drop_rate, include_top)

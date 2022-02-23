@@ -118,7 +118,7 @@ def main(args):
         cla_params = torch.load(str(classifier_path))
         cla_acc = cla_params['cla_acc']
         classifier.load_state_dict(cla_params['state_dict'])
-        print('>>> load classifier from {} (classification acc {:.4f})'.format(classifier_path, cla_acc))
+        print('>>> load classifier from {} (classification acc {:.4f}%)'.format(classifier_path, cla_acc))
     else:
         raise RuntimeError('---> invalid classifier path: {}'.format(str(classifier_path)))
     
@@ -138,7 +138,6 @@ def main(args):
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
-        print(ood_loader.dataset.name)
         result_dic = {'name': ood_loader.dataset.name}
         
         ood_scores = get_scores(ae, classifier, ood_loader, normalize)
@@ -146,9 +145,12 @@ def main(args):
         scores = np.concatenate([id_scores, ood_scores])
         labels = np.concatenate([id_label, ood_label])
         
-        result_dic['fpr_at_tpr'], result_dic['auroc'], result_dic['aupr_in'], result_dic['aupr_out'] = compute_all_metrics(scores, labels)
+        result_dic['fpr_at_tpr'], result_dic['auroc'], result_dic['aupr_in'], result_dic['aupr_out'] = compute_all_metrics(scores, labels, verbose=False)
         result_dic_list.append(result_dic)
 
+        print('---> [ID: {:7s} - OOD: {:9s}] [auroc: {:3.3f}%, aupr_in: {:3.3f}%, aupr_out: {:3.3f}%, fpr@95tpr: {:3.3f}%]'.format(
+            id_loader.dataset.name, ood_loader.dataset.name, 100. * result_dic['auroc'], 100. * result_dic['aupr_in'], 100. * result_dic['aupr_out'], 100. * result_dic['fpr_at_tpr']))
+        
         # plot hist
         hist_scores = [id_scores, ood_scores]
         colors = ['lime', 'red']
@@ -165,7 +167,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reconstruciton Detect')
-    parser.add_argument('--data_dir', type=str, default='./datasets')
+    parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
     parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
     parser.add_argument('--id', type=str, default='cifar10')

@@ -174,7 +174,7 @@ def get_hybrid_dataset(root, name, split, transform, target_transform=None):
 
 # get common dataloader
 def get_dataloader(root, name, split, transform, batch_size, shuffle, num_workers):
-
+    
     ds = get_dataset(
         root=root,
         name=name,
@@ -229,7 +229,7 @@ def get_uniform_noise_dataloader(num, batch_size, shuffle, num_workers):
         num_workers=num_workers,
         pin_memory=True
     )
-    
+
 
 class AvgOfPair(Dataset):
     def __init__(self, dataset):
@@ -256,7 +256,7 @@ class GeoMeanOfPair(Dataset):
         self.shuffle_indices = np.arange(len(dataset))
         np.random.shuffle(self.shuffle_indices)
         self.labeled = False
-        
+    
     def __getitem__(self, i):
         random_idx = np.random.choice(len(self.dataset))
         while random_idx == i:

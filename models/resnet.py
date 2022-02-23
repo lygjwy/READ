@@ -105,21 +105,21 @@ class ResNet(nn.Module):
             # whether to contain classify head, default False
             out = self.fc(out)
         return out
-    
 
-def get_resnet18(num_classes, include_top):
+
+def get_resnet18(num_classes, include_top=True):
     return ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, include_top=include_top)
 
 
-def get_resnet34(num_classes, include_top):
+def get_resnet34(num_classes, include_top=True):
     return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_classes, include_top=include_top)
 
 
-def get_resnet50(num_classes, include_top):
+def get_resnet50(num_classes, include_top=True):
     return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_classes, include_top=include_top)
 
 
-def get_resnet101(num_classes, include_top):
+def get_resnet101(num_classes, include_top=True):
     return ResNet(Bottleneck, [3, 4, 23, 3], num_classes=num_classes, include_top=include_top)
 
 

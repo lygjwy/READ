@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from functools import partial
 import argparse
+import sklearn.covariance
 
 import torch
 import torch.nn as nn
@@ -62,6 +63,145 @@ def get_odin_scores(classifier, data_loader, temperature, magnitude):
     return odin_scores
 
 
+def sample_estimator(classifier, data_loader, num_classes, feature_list):
+    classifier.eval()
+    group_lasso = sklearn.covariance.EmpiricalCovariance(assume_centered=False)
+    correct, total = 0, 0
+    
+    num_output = len(feature_list)
+    num_sample_per_class = np.zeros(num_classes)
+    list_features = []
+    for i in range(num_output):
+        tmp_list = []
+        for j in range(num_classes):
+            tmp_list.append(0)
+        list_features.append(tmp_list)
+        
+    for sample in data_loader:
+        data, target = sample
+        data, target = data.cuda(), target.cuda()
+        total += target.size(0)
+        
+        output, out_features = classifier.feature_list(data)
+        
+        # get hidden features
+        for i in range(num_output):
+            out_features[i] = out_features[i].view(out_features[i].size(0), out_features[i].size(1), -1)
+            out_features[i] = torch.mean(out_features[i].data, 2)
+        
+        # compute classification accuracy
+        _, pred = output.data.max(1)
+        correct += pred.eq(target).cpu().sum()
+        
+        # construct the sample matrix
+        for i in range(target.size(0)):
+            label = target[i]
+            if num_sample_per_class[label] == 0:
+                out_count = 0
+                for out in out_features:
+                    list_features[out_count][label] = out[i].view(1, -1)
+                    out_count += 1
+            else:
+                out_count = 0
+                for out in out_features:
+                    list_features[out_count][label] = torch.cat((list_features[out_count][label], out[i].view(1, -1)), 0)
+                    out_count += 1
+            num_sample_per_class[label] += 1
+            
+    category_sample_mean = []
+    out_count = 0
+    for num_feature in feature_list:
+        tmp_list = torch.Tensor(num_classes, int(num_feature)).cuda()
+        for j in range(num_classes):
+            tmp_list[j] = torch.mean(list_features[out_count][j], 0)
+        category_sample_mean.append(tmp_list)
+        out_count += 1
+    
+    precision = []
+    for k in range(num_output):
+        X = 0
+        for i in range(num_classes):
+            if i == 0:
+                X = list_features[k][i] - category_sample_mean[k][i]
+            else:
+                X = torch.cat((X, list_features[k][i] - category_sample_mean[k][i]), 0)
+        
+        # find inverse
+        group_lasso.fit(X.cpu().numpy())
+        tmp_precision = group_lasso.precision_
+        tmp_precision = torch.from_numpy(tmp_precision).float().cuda()
+        precision.append(tmp_precision)
+       
+    # print('---> Training acc: {:.2f}%'.format(100. * correct / total))
+    
+    return category_sample_mean, precision
+
+
+def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision, layer_index, magnitude):
+    classifier.eval()
+    
+    maha_scores = []
+    for sample in data_loader:
+        if data_loader.dataset.labeled:
+            data, _ = sample
+        else:
+            data = sample
+        data = data.cuda()
+        
+        data.requires_grad = True 
+        
+        out_features = classifier.intermediate_forward(data, layer_index)
+        out_features = out_features.view(out_features.size(0), out_features.size(1), -1)
+        out_features = torch.mean(out_features, 2)
+        
+        # compute maha score
+        gaussian_score = 0
+        for i in range(num_classes):
+            category_sample_mean = sample_mean[layer_index][i]
+            zero_f = out_features.data - category_sample_mean
+            term_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+            if i == 0:
+                gaussian_score = term_gau.view(-1, 1)
+            else:
+                gaussian_score = torch.cat((gaussian_score, term_gau.view(-1, 1)), 1)
+        
+        # Input precessing
+        sample_pred = gaussian_score.max(1)[1]
+        category_sample_mean = sample_mean[layer_index].index_select(0, sample_pred)
+        
+        zero_f = out_features - category_sample_mean
+        pure_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+        loss = torch.mean(-pure_gau)
+        loss.backward()
+        
+        gradient = torch.ge(data.grad.data, 0)
+        gradient = (gradient.float() - 0.5) * 2
+        
+        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
+        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
+        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
+        
+        tmpInputs = torch.add(data.data, -magnitude, gradient)
+        with torch.no_grad():
+            noise_out_features = classifier.intermediate_forward(tmpInputs, layer_index)
+        noise_out_features = noise_out_features.view(noise_out_features.size(0), noise_out_features.size(1), -1)
+        noise_out_features = torch.mean(noise_out_features, 2)
+        noise_gaussian_score = 0
+        for i in range(num_classes):
+            category_sample_mean = sample_mean[layer_index][i]
+            zero_f = noise_out_features.data - category_sample_mean
+            term_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+            if i == 0:
+                noise_gaussian_score = term_gau.view(-1, 1)
+            else:
+                noise_gaussian_score = torch.cat((noise_gaussian_score, term_gau.view(-1, 1)), 1)
+        
+        noise_gaussian_score, _ = torch.max(noise_gaussian_score, dim=1)
+        maha_scores.extend(noise_gaussian_score.tolist())
+        
+    return maha_scores
+
+
 def get_ood_val_loader(name, mean, std, get_dataloader_default):
     if name == 'pixelate':
         transform = transforms.Compose([
@@ -76,9 +216,15 @@ def get_ood_val_loader(name, mean, std, get_dataloader_default):
             transforms.Normalize(mean, std)
         ])
     
-    ood_val_loader = get_dataloader_default(name='cifar100', transform=transform)
+    ood_val_loader = get_dataloader_default(name='cifar10', transform=transform)
     
     return ood_val_loader
+
+
+scores_dic = {
+    'odin': get_odin_scores,
+    'maha': get_maha_scores
+}
 
 
 def main(args):
@@ -101,7 +247,7 @@ def main(args):
     uniform_noise_loader = get_uniform_noise_dataloader(10000, args.batch_size, False, args.prefetch)
     ood_loaders.append(uniform_noise_loader)
     
-    id_dataset = get_dataset(root=args.data_dir, name='cifar100', split='test', transform=test_transform)
+    id_dataset = get_dataset(root=args.data_dir, name='cifar10', split='test', transform=test_transform)
     avg_pair_loader = DataLoader(
         AvgOfPair(id_dataset),
         batch_size=args.batch_size,
@@ -111,7 +257,7 @@ def main(args):
     )
     ood_loaders.append(avg_pair_loader)
     
-    id_dataset = get_dataset(root=args.data_dir, name='cifar100', split='test', transform=transforms.ToTensor())
+    id_dataset = get_dataset(root=args.data_dir, name='cifar10', split='test', transform=transforms.ToTensor())
     geo_mean_loader = DataLoader(
         GeoMeanOfPair(id_dataset),
         batch_size=args.batch_size,
@@ -155,12 +301,32 @@ def main(args):
         classifier.cuda()
     cudnn.benchmark = True
     
+    # ------------------------------------ detect ood ------------------------------------
+    get_scores = scores_dic[args.scores]
     fpr_at_tprs, aurocs, aupr_ins, aupr_outs = [], [], [], []
-    id_scores = get_odin_scores(classifier, id_loader, args.temperature, args.magnitude)
+    
+    if args.scores == 'odin':
+        id_scores = get_scores(classifier, id_loader, args.temperature, args.magnitude)
+    elif args.scores == 'maha':
+        num_output = 1
+        feature_list = np.empty(num_output)
+        feature_list[0] = 128  # 64 * widen_factor
+    
+        sample_mean, precision = sample_estimator(classifier, id_loader, num_classes, feature_list)
+        
+        id_scores = get_maha_scores(classifier, id_loader, num_classes, sample_mean, precision, num_output - 1, args.magnitude)
+    else:
+        raise RuntimeError('<--- invalid scores: '.format(args.scores))
+    
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
-        ood_scores = get_odin_scores(classifier, ood_loader, args.temperature, args.magnitude)
+        if args.scores == 'odin':
+            ood_scores = get_scores(classifier, ood_loader, args.temperature, args.magnitude)
+        elif args.scores == 'maha':
+            ood_scores = get_maha_scores(classifier, ood_loader, num_classes, sample_mean, precision, 0, args.magnitude)
+        else:
+            raise RuntimeError('<--- invalid scores: '.format(args.scores))
         ood_label = np.ones(len(ood_scores))
         
         scores = np.concatenate([id_scores, ood_scores])
@@ -172,30 +338,40 @@ def main(args):
         aurocs.append(auroc)
         aupr_ins.append(aupr_in)
         aupr_outs.append(aupr_out)
-        
-    # print ood datasets average
-    # print('>>> Temperature: {:.4f} | Magnitude: {:.4f}'.format(args.temperature, args.magnitude))
-    print('>>> [Temperature: {:.4f}, Magnitude: {:.4f}] [avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
-            args.temperature,
-            args.magnitude,
-            np.mean(aurocs),
-            np.mean(fpr_at_tprs),
-            np.mean(aupr_ins),
-            np.mean(aupr_outs)
+    
+    if args.scores == 'odin':
+        print('---> [Temperature: {:.4f}, Magnitude: {:.4f}] [avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
+                args.temperature,
+                args.magnitude,
+                np.mean(aurocs),
+                np.mean(fpr_at_tprs),
+                np.mean(aupr_ins),
+                np.mean(aupr_outs)
+            )
         )
-    )
+    
+    if args.scores == 'maha':
+        print('---> [Magnitude: {:.4f}] [avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
+                args.magnitude,
+                np.mean(aurocs),
+                np.mean(fpr_at_tprs),
+                np.mean(aupr_ins),
+                np.mean(aupr_outs)
+            )
+        )
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ID & OOD-val to tune hyper-parameter')
-    parser.add_argument('--data_dir', type=str, default='./datasets')
+    parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--id', type=str, default='cifar10')
-    parser.add_argument('--temperature', type=int, default=1)
-    parser.add_argument('--magnitude', type=float, default=0.0)
+    parser.add_argument('--scores', type=str, default='odin')
+    parser.add_argument('--temperature', type=int, default=1000)
+    parser.add_argument('--magnitude', type=float, default=0.0014)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--classifier', type=str, default='wide_resnet')
-    parser.add_argument('--classifier_path', type=str, default='./snapshots/e-p.pth')
+    parser.add_argument('--classifier_path', type=str, default='./snapshots/p.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
     
     args = parser.parse_args()
