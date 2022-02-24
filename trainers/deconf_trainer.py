@@ -35,18 +35,20 @@ class DeconfTrainer():
             
             self.optimizer.zero_grad()
             self.h_optimizer.zero_grad()
+            
             loss.backward()
             
             self.optimizer.step()
-            self.scheduler.step()
             self.h_optimizer.step()
-            self.h_scheduler.step()
             
             _, pred = logit.max(dim=1)
             with torch.no_grad():
                 total_loss += loss.item()
                 total += target.size(0)
                 correct += pred.eq(target).sum().item()
+        
+        self.h_scheduler.step()
+        self.scheduler.step()
         
         # average on batch
         print('[cla loss: {:.4f} | cla acc: {:.4f}%]'.format(total_loss / len(self.train_loader), 100. * correct / total))

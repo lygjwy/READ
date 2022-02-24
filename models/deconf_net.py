@@ -4,9 +4,7 @@ import torch.nn.functional as F
 
 
 def norm(x):
-    print(x.shape)
-    norm = torch.norm(x, p=2, dim=1) # shape?
-    print(norm.shape)
+    norm = torch.norm(x, p=2, dim=1)
     x = x / (norm.expand(1, -1).t() + .0001)
     return x
 
@@ -53,7 +51,7 @@ class InnerDeconf(nn.Module):
         self._init_weights()
         
     def _init_weights(self):
-        nn.init.kaiming_uniform_(self.h.weight.data, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.h.weight.data, nonlinearity='relu')
         self.h.bias.data = torch.zeros(size=self.h.bias.size())
     
     def forward(self, x):
@@ -86,7 +84,7 @@ class DeconfNet(nn.Module):
             nn.Sigmoid()
         )
         
-        self.softmax = nn.Softmax()
+        # self.softmax = nn.Softmax()
         
     def forward(self, x):
         output = self.feature_extractor(x)

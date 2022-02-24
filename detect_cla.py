@@ -9,7 +9,6 @@ import sklearn.covariance
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 
 from datasets import get_transforms, get_ood_transforms, get_dataset_info, get_dataloader

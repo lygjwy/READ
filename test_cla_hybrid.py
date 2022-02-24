@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
-from datasets import get_ae_transform, get_ae_normal_transform, get_dataset_info, get_dataloader, get_corrupt_dataloader
+from datasets import get_ae_transforms, get_dataset_info, get_dataloader
 from models import get_ae, get_classifier
 
 
@@ -56,75 +56,23 @@ def eval_or_classification(ae, classifier, data_loader, normalize):
     return metrics
 
 
-def eval_cor_classification(ae, classifier, data_loader, normalize):
-    total, cor_correct, ori_correct, rec_correct = 0, 0, 0, 0
-    
-    for sample in data_loader:
-        assert len(sample) == 3
-        cor_data, data, target = sample
-        cor_data, data, target = cor_data.cuda(), data.cuda(), target.cuda()
-        with torch.no_grad():
-            rec_data = ae(cor_data)
-        
-        cor_data = torch.stack([normalize(img) for img in cor_data], dim=0)
-        data = torch.stack([normalize(img) for img in data], dim=0)
-        rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
-        
-        with torch.no_grad():
-            cor_logit = classifier(cor_data)
-            ori_logit = classifier(data)
-            rec_logit = classifier(rec_data)
-            total += target.size(0)
-            _, cor_pred = cor_logit.max(dim=1)
-            _, ori_pred = ori_logit.max(dim=1)
-            _, rec_pred = rec_logit.max(dim=1)
-            cor_correct += cor_pred.eq(target).sum().item()
-            ori_correct += ori_pred.eq(target).sum().item()
-            rec_correct += rec_pred.eq(target).sum().item()
-    
-    metrics = {
-        'cor_cla_acc': 100. * cor_correct / total,
-        'ori_cla_acc': 100. * ori_correct / total,
-        'rec_cla_acc': 100. * rec_correct / total
-    }
-    
-    return metrics
-
-
 def main(args):
     
     # -------------------- data loader -------------------- #
-    ae_transform = get_ae_transform('test')
-    ae_normal_transform = get_ae_normal_transform()
+    ae_transform = get_ae_transforms('test')
     
     means, stds = get_dataset_info(args.dataset, 'mean_and_std')
     normalize = Normalize(means, stds)
     print('>>> Reconstruction Dataset: {} with {} data mode'.format(args.dataset, args.data_mode))
-    if args.data_mode == 'original':
-        get_dataloader_default = partial(
-            get_dataloader,
-            root=args.data_dir,
-            name=args.dataset,
-            transform=ae_transform,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.prefetch
-        )
-    elif args.data_mode == 'corrupt':
-        get_dataloader_default = partial(
-            get_corrupt_dataloader,
-            root=args.data_dir,
-            name=args.dataset,
-            corrupt=args.corrupt,
-            severity=args.severity,
-            random=False,
-            transform=ae_normal_transform,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.prefetch
-        )
-    else:
-        raise RuntimeError('<--- invlaid data mode: '.format(args.data_mode))
+    get_dataloader_default = partial(
+        get_dataloader,
+        root=args.data_dir,
+        name=args.dataset,
+        transform=ae_transform,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.prefetch
+    )
     
     test_loader_train = get_dataloader_default(split='train')
     test_loader_test = get_dataloader_default(split='test')
@@ -163,31 +111,22 @@ def main(args):
     classifier.eval()
     
     # -------------------- inference -------------------- #
-    if args.data_mode == 'original':
-        test_train_rec_cla_acc = eval_or_classification(ae, classifier, test_loader_train, normalize)['rec_cla_acc']
-        test_test_rec_cla_acc = eval_or_classification(ae, classifier, test_loader_test, normalize)['rec_cla_acc']
-    elif args.data_mode == 'corrupt':
-        test_train_rec_cla_acc = eval_cor_classification(ae, classifier, test_loader_train, normalize)['rec_cla_acc']
-        test_test_rec_cla_acc = eval_cor_classification(ae, classifier, test_loader_test, normalize)['rec_cla_acc']
-    else:
-        raise RuntimeError('<--- invalid data mode: {}'.format(args.data_mode))
+    test_train_rec_cla_acc = eval_or_classification(ae, classifier, test_loader_train, normalize)['rec_cla_acc']
+    test_test_rec_cla_acc = eval_or_classification(ae, classifier, test_loader_test, normalize)['rec_cla_acc']
     
     print('[train set rec cla acc: {:.4f}% | test set rec cla acc: {:.4f}%]'.format(test_train_rec_cla_acc, test_test_rec_cla_acc))
     
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reconstruction image classify')
-    parser.add_argument('--data_dir', type=str, default='./datasets')
+    parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--dataset', type=str, default='cifar10')
-    parser.add_argument('--data_mode', type=str, default='original')
-    parser.add_argument('--corrupt', type=str, default='gaussian_noise')
-    parser.add_argument('--severity', type=float, default=0.0)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--ae', type=str, default='res_ae')
-    parser.add_argument('--ae_path', type=str, default='./outputs/res_ae/rec_best.pth')
+    parser.add_argument('--ae_path', type=str, default='./snapshots/res_ae/rec_best.pth')
     parser.add_argument('--classifier', type=str, default='resnet18')
-    parser.add_argument('--classifier_path', type=str, default='./outputs/resnet18/cla_best.pth')
+    parser.add_argument('--classifier_path', type=str, default='./outputs/resnet18/r.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
     
     args = parser.parse_args()

@@ -66,7 +66,7 @@ def main(args):
     
     # ------------------------------------ Init Classifier ------------------------------------
     num_classes = len(get_dataset_info(args.dataset.split('-')[0], 'classes'))
-    print('>>> Classifier: {}'.format(args.arch))
+    print('>>> Deconf: {} - {}'.format(args.feature_extractor, args.h))
     deconf_net = get_deconf_net(args.feature_extractor, args.h, num_classes)
     
     # move classifier to gpu device
@@ -83,9 +83,8 @@ def main(args):
             h_parameters.append(parameter)
         else:
             parameters.append(parameter)
-    
+
     # ------------------------------------ Init Trainer ------------------------------------
-    print('>>> Optimizer: SGD  | Scheduler: LambdaLR')
     print('>>> Lr: {:.5f} | Weight_decay: {:.5f} | Momentum: {:.2f}'.format(args.lr, args.weight_decay, args.momentum))
     optimizer = optim.SGD(parameters, lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones = [int(args.epochs * 0.5), int(args.epochs * 0.75)], gamma=0.1)
@@ -120,14 +119,6 @@ def main(args):
                 'cla_acc': val_metrics['cla_acc']
             }
         
-        print(
-            "---> Epoch {:4d} | Time {:5d}s".format(
-                epoch,
-                int(time.time() - begin_time)
-            ),
-            flush=True
-        )
-        
         if cla_best:
             cla_best_state = {
                 'epoch': epoch,
@@ -154,19 +145,18 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Train Classifier')
+    parser = argparse.ArgumentParser(description='Train Deconf-net')
     parser.add_argument('--seed', default=1, type=int, help='seed for initialize training')
+    parser.add_argument('--data_dir', help='directory to store datasets', default='/home/iip/datasets')
+    parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
-    parser.add_argument('--h', type=str, default='inner')
+    parser.add_argument('--h', type=str, default='inner')  # inner, euclidean, cosine
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
     parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--data_dir', help='directory to store datasets', default='data/datasets')
-    parser.add_argument('--dataset', type=str, default='cifar10')
-    # parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365_10k', 'isun'])
+    parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4, help='number of dataloader workers')
     parser.add_argument('--gpu_idx', help='used gpu idx', type=int, default=0)
