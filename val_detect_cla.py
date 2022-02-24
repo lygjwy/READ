@@ -318,6 +318,8 @@ def main(args):
     else:
         raise RuntimeError('<--- invalid scores: '.format(args.scores))
     
+    # another validation metrics
+    avg_score = np.mean(id_scores)
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
@@ -340,9 +342,10 @@ def main(args):
         aupr_outs.append(aupr_out)
     
     if args.scores == 'odin':
-        print('---> [Temperature: {:.4f}, Magnitude: {:.4f}] [avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
+        print('---> [Temperature: {:.4f}, Magnitude: {:.4f}] [avg_score: {:.4f} | avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
                 args.temperature,
                 args.magnitude,
+                avg_score,
                 np.mean(aurocs),
                 np.mean(fpr_at_tprs),
                 np.mean(aupr_ins),
@@ -351,8 +354,9 @@ def main(args):
         )
     
     if args.scores == 'maha':
-        print('---> [Magnitude: {:.4f}] [avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
+        print('---> [Magnitude: {:.4f}] [avg_score: {:.4f} | avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
                 args.magnitude,
+                avg_score,
                 np.mean(aurocs),
                 np.mean(fpr_at_tprs),
                 np.mean(aupr_ins),

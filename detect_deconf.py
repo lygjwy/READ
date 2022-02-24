@@ -36,7 +36,7 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
             scores = logits
             
         max_scores, _ = torch.max(scores, dim=1)
-        max_scores.backward(torch.ones(len(max_scores)))
+        max_scores.backward(torch.ones(len(max_scores)).cuda())
         
         gradient = torch.ge(data.grad.detach(), 0)
         gradient = (gradient.float() - 0.5) * 2
@@ -45,7 +45,7 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
         gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
         gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
         
-        tmpInputs = torch.add(data.detach(), -magnitude, gradient)
+        tmpInputs = torch.add(data.detach(), magnitude, gradient)
         
         logits, h, g = deconf_net(tmpInputs)
         if score_func == 'h':
@@ -99,7 +99,7 @@ def main(args):
         ood_loaders.append(get_dataloader_default(name=ood, transform=ood_test_transform))
     
     #  load deconf net
-    num_classes = len(get_dataset_info(args.dataset.split('-')[0], 'classes'))
+    num_classes = len(get_dataset_info(args.id.split('-')[0], 'classes'))
     print('>>> Deconf: {} - {}'.format(args.feature_extractor, args.h))
     deconf_net = get_deconf_net(args.feature_extractor, args.h, num_classes)
     deconf_path = Path(args.deconf_path)
@@ -167,12 +167,12 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
     parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
-    parser.add_argument('--h', type=str, default='inner')
-    parser.add_argument('--deconf_path', type=str, default='./snapshots/w-i.pth')
+    parser.add_argument('--h', type=str, default='cosine')
+    parser.add_argument('--deconf_path', type=str, default='./snapshots/w-c.pth')
     parser.add_argument('--id', type=str, default='cifar10')
     parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365_10k', 'isun'])
     parser.add_argument('--scores', type=str, default='godin')
-    parser.add_argument('--magnitude', type=float, default=0.0014)
+    parser.add_argument('--magnitude', type=float, default=0.0)
     parser.add_argument('--score_func', type=str, default='h')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)

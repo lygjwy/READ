@@ -59,10 +59,10 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
             scores = g
         else:
             scores = logits
-            
-        max_scores, _ = torch.max(scores, dim=1)
-        max_scores.backward(torch.ones(len(max_scores)))
         
+        max_scores, _ = torch.max(scores, dim=1)
+        max_scores.backward(torch.ones(len(max_scores)).cuda())
+
         gradient = torch.ge(data.grad.detach(), 0)
         gradient = (gradient.float() - 0.5) * 2
         
@@ -70,7 +70,7 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
         gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
         gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
         
-        tmpInputs = torch.add(data.detach(), -magnitude, gradient)
+        tmpInputs = torch.add(data.detach(), magnitude, gradient)
         
         logits, h, g = deconf_net(tmpInputs)
         if score_func == 'h':
@@ -147,16 +147,16 @@ def main(args):
     ood_loaders.append(invert_loader)
     
     #  load deconf net
-    num_classes = len(get_dataset_info(args.dataset.split('-')[0], 'classes'))
-    print('>>> Deconf: {} - {}'.format(args.feature_extractor, args.h))
+    num_classes = len(get_dataset_info(args.id.split('-')[0], 'classes'))
+    # print('>>> Deconf: {} - {}'.format(args.feature_extractor, args.h))
     deconf_net = get_deconf_net(args.feature_extractor, args.h, num_classes)
     deconf_path = Path(args.deconf_path)
     
     if deconf_path.exists():
         deconf_params = torch.load(str(deconf_path))
-        cla_acc = deconf_params['cla_acc']
+        # cla_acc = deconf_params['cla_acc']
         deconf_net.load_state_dict(deconf_params['state_dict'])
-        print('>>> load deconf net from {} (classifiy acc {:.4f}%)'.format(str(deconf_path), cla_acc))
+        # print('>>> load deconf net from {} (classifiy acc {:.4f}%)'.format(str(deconf_path), cla_acc))
     else:
         raise RuntimeError('<--- invalid deconf path: {}'.format(str(deconf_path)))
     
@@ -175,10 +175,12 @@ def main(args):
     else:
         id_scores = get_scores(deconf_net, id_loader)
     
+    # another validation metrics
+    avg_score = np.mean(id_scores)
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
-        
+         
         if args.scores == 'godin':
             ood_scores = get_scores(deconf_net, ood_loader, args.magnitude, args.score_func)
         else:
@@ -196,8 +198,9 @@ def main(args):
         aupr_outs.append(aupr_out)
     
     if args.scores == 'godin':
-        print('---> [Magnitude: {:.4f}] [avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
+        print('---> [Magnitude: {:.4f}] [avg_score: {:.4f} | avg auroc: {:.4f} | avg fpr_at_tpr: {:.4f} | avg aupr_in: {:.4f} | avg aupr_out: {:.4f}]'.format(
                 args.magnitude,
+                avg_score,
                 np.mean(aurocs),
                 np.mean(fpr_at_tprs),
                 np.mean(aupr_ins),
