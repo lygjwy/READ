@@ -15,7 +15,7 @@ class CosineDeconf(nn.Module):
         
         self.h = nn.Linear(in_features, num_classes, bias=False)
         self._init_weights()
-        
+    
     def _init_weights(self):
         nn.init.kaiming_normal_(self.h.weight.data, nonlinearity='relu')
     
@@ -33,7 +33,7 @@ class EuclideanDeconf(nn.Module):
         
         self.h = nn.Linear(in_features, num_classes, bias=False)
         self._init_weights()
-        
+
     def _init_weights(self):
         nn.init.kaiming_normal_(self.h.weight.data, nonlinearity='relu')
         
@@ -94,5 +94,9 @@ class DeconfNet(nn.Module):
         
         quotients = numerators / denominators
         return quotients, numerators, denominators
+    
+    
+    def intermediate_forward(self, x):
+        return self.feature_extractor(x)
 
     

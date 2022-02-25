@@ -34,7 +34,7 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
             scores = g
         else:
             scores = logits
-            
+        
         max_scores, _ = torch.max(scores, dim=1)
         max_scores.backward(torch.ones(len(max_scores)).cuda())
         
