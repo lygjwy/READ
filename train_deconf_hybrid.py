@@ -11,7 +11,7 @@ import torch
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-from datasets import get_transforms, get_dataset_info, get_dataloader
+from datasets import get_transforms, get_dataset_info, get_dataloader, get_hybrid_dataloader
 from models import get_deconf_net
 from trainers import get_deconf_hybrid_trainer
 from evaluation import Evaluator
@@ -23,7 +23,7 @@ def init_seeds(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    
+
 
 def main(args):
     init_seeds(args.seed)
@@ -45,7 +45,7 @@ def main(args):
     
     ## get dataloader
     get_dataloader_default = partial(
-        get_dataloader,
+        get_hybrid_dataloader,
         root=args.data_dir,
         name=args.dataset,
         batch_size=args.batch_size,
@@ -110,7 +110,7 @@ def main(args):
     begin_time = time.time()
     
     start_epoch = 1
-    ori_cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0, 0.0
+    ori_cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0
     ori_cla_best_state, rec_cla_best_state, hybrid_cla_best_state, last_state = {}, {}, {}, {}
     
     for epoch in range(start_epoch, args.epochs+1):
@@ -207,7 +207,7 @@ if __name__ == '__main__':
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
     parser.add_argument('--h', type=str, default='inner')  # inner, euclidean, cosine
     parser.add_argument('--pretrained', action='store_true', default=False)
-    parser.add_argument('--pretrain_path', type=str, default='./snapshots')
+    parser.add_argument('--pretrain_path', type=str, default='./snapshots/w-i.pth')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)

@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from .named_dataset_with_meta import NamedDatasetWithMeta
-from .named_or_dataset_with_meta import NamedOrDatasetWithMeta
+from .named_hybrid_dataset_with_meta import NamedHybridDatasetWithMeta
 
 from .transforms import get_shift_transform
 
@@ -161,7 +161,7 @@ def get_dataset(root, name, split, transform, target_transform=None):
 
 
 def get_hybrid_dataset(root, name, split, transform, target_transform=None):
-    dataset = NamedOrDatasetWithMeta(
+    dataset = NamedHybridDatasetWithMeta(
         root=root,
         name=name,
         split=split,

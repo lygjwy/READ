@@ -1,5 +1,4 @@
 import math
-from xml.etree.ElementInclude import include
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -82,7 +81,7 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
-        
+    
     def forward(self, x):
         out = self.conv1(x)
         out = self.block1(out)

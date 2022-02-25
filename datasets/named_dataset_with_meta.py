@@ -1,6 +1,5 @@
 import ast
 import os
-import sys
 from PIL import Image
 from pathlib import Path
 
@@ -46,10 +45,11 @@ class NamedDatasetWithMeta(VisionDataset):
     def __init__(self, root, name, split, transform, target_transform=None):
         root = os.path.expanduser(root)
         super(NamedDatasetWithMeta, self).__init__(root, transform=transform, target_transform=target_transform)
-
+        self.name = name
+        
         #  load classes info
         self.root = Path(root)
-        dataset_path = self.root / name
+        dataset_path = self.root / self.name
         
         # load dataset samples & targets info
         if split == 'train':
@@ -66,7 +66,7 @@ class NamedDatasetWithMeta(VisionDataset):
         
         # read entry data from entry file
         self.samples = self._parse_entry_file()
-        self.name = name
+
 
     def _find_classes(self, dataset_path):
         classes_path = dataset_path / 'classes.txt'
@@ -79,12 +79,11 @@ class NamedDatasetWithMeta(VisionDataset):
             class_to_idx = {cla: idx for idx, cla in enumerate(classes)}
         else:
             self.labeled = False
-            # raise RuntimeError('---> Dataset classes.txt not exist')
-            # print('---> dataset without label')
             classes = None
             class_to_idx = None
 
         return classes, class_to_idx
+
 
     def _parse_entry_file(self):
         
