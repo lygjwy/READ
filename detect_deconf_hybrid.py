@@ -30,7 +30,7 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
     ae.eval()
     deconf_net.eval()
     
-    ori_scores, similarity_scores, hybrid_scores = [], [], []
+    ori_scores, rec_scores, similarity_scores, hybrid_scores = [], [], [], []
     
     for sample in data_loader:
         if data_loader.dataset.labeled:
@@ -45,14 +45,19 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
             data = torch.stack([normalize(img) for img in data], dim=0)
             rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
         
-        # data.requires_grad = True
-        # rec_data.requires_grad = True
-        # rec_logits, rec_h, rec_g = deconf_net(data)
             penultimate_feature = deconf_net.intermediate_forward(data)
             h = deconf_net.h(penultimate_feature)
             rec_penultimate_feature = deconf_net.intermediate_forward(rec_data)
+            rec_h = deconf_net.h(rec_penultimate_feature)
         
-        ori_scores.extend(torch.max(h, dim=1)[0].tolist())
+        ori_score, cla_idx = torch.max(h, dim=1) 
+        ori_scores.extend(ori_score.tolist())
+        
+        # the same category
+        cla_idx = torch.unsqueeze(cla_idx, 0).t()  # column vector
+        rec_score = torch.gather(rec_h, dim=1, index=cla_idx)
+        rec_scores.extend(torch.squeeze(rec_score).tolist())
+        
         # calculate the difference between penulitimate_feature & rec_penultimate_feature
         if args.h == 'cosine':
             similarity = torch.cosine_similarity(penultimate_feature, rec_penultimate_feature, dim=1)
@@ -68,8 +73,10 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
     
     # combine ori_scores & similarity_scores
     # ? how to use image complexity as weight
-    for ori_score, similarity_score in zip(ori_scores, similarity_scores):
-        hybrid_scores.append(ori_score + similarity_score)
+    # for ori_score, similarity_score in zip(ori_scores, similarity_scores):
+    #     hybrid_scores.append(ori_score + similarity_score)
+    for ori_score, rec_score in zip(ori_scores, rec_scores):
+        hybrid_scores.append(ori_score + rec_score)
     return hybrid_scores
 
 

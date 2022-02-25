@@ -1,32 +1,29 @@
-import numpy as np
-import argparse
+# train deconf net using ori & rec imgs
 import time
 import copy
-from functools import partial
 from pathlib import Path
+import argparse
 import random
+import numpy as np
+from functools import partial
 
 import torch
+import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-
-from datasets import get_dataset_info, get_transforms, get_hybrid_dataloader
-from models import get_classifier
-from trainers import get_classifier_hybrid_trainer
+from datasets import get_transforms, get_dataset_info, get_dataloader
+from models import get_deconf_net
+from trainers import get_deconf_hybrid_trainer
 from evaluation import Evaluator
-from utils import setup_logger
+from utils import  setup_logger
 
-
-# scheduler
-def cosine_annealing(step, total_steps, lr_max, lr_min):
-    return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
 
 def init_seeds(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
+    
 
 def main(args):
     init_seeds(args.seed)
@@ -41,14 +38,14 @@ def main(args):
 
     # ------------------------------------ Init Datasets ------------------------------------
     ## get dataset transform
-    train_transform = get_transforms(args.dataset, stage='train')
-    val_transform = get_transforms(args.dataset, stage='test')  # using train set's mean&std
+    train_transform = get_transforms(args.dataset.split('-')[0], stage='train')
+    val_transform = get_transforms(args.dataset.split('-')[0], stage='test')  # using train set's mean&std
 
     print('>>> Dataset: {}'.format(args.dataset))
     
     ## get dataloader
     get_dataloader_default = partial(
-        get_hybrid_dataloader,
+        get_dataloader,
         root=args.data_dir,
         name=args.dataset,
         batch_size=args.batch_size,
@@ -68,55 +65,58 @@ def main(args):
     )
     
     # ------------------------------------ Init Classifier ------------------------------------
-    num_classes = len(get_dataset_info(args.dataset, 'classes'))
-    print('>>> Classifier: {}'.format(args.arch))
-    classifier = get_classifier(args.arch, num_classes)
+    num_classes = len(get_dataset_info(args.dataset.split('-')[0], 'classes'))
+    print('>>> Deconf: {} - {}'.format(args.feature_extractor, args.h))
+    deconf_net = get_deconf_net(args.feature_extractor, args.h, num_classes)
     
     if args.pretrained:
-        # load pretrained model
+        #  load pretrain model
         pretrain_path = Path(args.pretrain_path)
         if pretrain_path.exists():
-            cla_params = torch.load(str(pretrain_path))
-            cla_acc = cla_params['cla_acc']
-            classifier.load_state_dict(cla_params['state_dict'])
-            print('>>> load pretrained classifier from {} (classification acc {:.4f}%)'.format(str(pretrain_path), cla_acc))
+            deconf_params = torch.load(str(pretrain_path))
+            cla_acc = deconf_params['cla_acc']
+            deconf_net.load_state_dict(deconf_params['state_dict'])
+            print('>>> load pretrained deconf net from {} (classification acc {:.4f}%)'.format(str(pretrain_path), cla_acc))
         else:
-            raise RuntimeError('<--- invalid pretrained classifier path: {}'.format(str(pretrain_path)))
+            raise RuntimeError('<--- invalid pretrained deconf net path: {}'.format(str(pretrain_path)))
     
-    # ------------------------------------ Init Trainer ------------------------------------
-    print('>>> Optimizer: SGD  | Scheduler: LambdaLR')
-    print('>>> Lr: {:.5f} | Weight_decay: {:.5f} | Momentum: {:.2f}'.format(args.lr, args.weight_decay, args.momentum))
-    optimizer = torch.optim.SGD(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        lr_lambda=lambda step: cosine_annealing(
-            step,
-            args.epochs * len(train_loader),
-            1,
-            1e-6 / args.lr
-        )
-    )
-
-    trainer = get_classifier_hybrid_trainer(classifier, train_loader, optimizer, scheduler)
-    
-    # move classifier to gpu device
+    # move deconf_net to gpu device
     gpu_idx = int(args.gpu_idx)
     if torch.cuda.is_available():
         torch.cuda.set_device(gpu_idx)
-        classifier.cuda()
+        deconf_net.cuda()
     cudnn.benchmark = True
+    
+    parameters = []
+    h_parameters = []
+    for name, parameter in deconf_net.named_parameters():
+        if name == 'h.h.weight' or name == 'h.h.bias':
+            h_parameters.append(parameter)
+        else:
+            parameters.append(parameter)
 
+    # ------------------------------------ Init Trainer ------------------------------------
+    print('>>> Lr: {:.5f} | Weight_decay: {:.5f} | Momentum: {:.2f}'.format(args.lr, args.weight_decay, args.momentum))
+    optimizer = optim.SGD(parameters, lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones = [int(args.epochs * 0.5), int(args.epochs * 0.75)], gamma=0.1)
+    
+    h_optimizer = optim.SGD(h_parameters, lr=args.lr, momentum=args.momentum) # no weight_decay
+    h_scheduler = optim.lr_scheduler.MultiStepLR(h_optimizer, milestones = [int(args.epochs * 0.5), int(args.epochs * 0.75)], gamma = 0.1)
+    
+    trainer = get_deconf_hybrid_trainer(deconf_net, train_loader, optimizer, h_optimizer, scheduler, h_scheduler)
+    
     # ------------------------------------ Start training ------------------------------------
-    evaluator = Evaluator(classifier)
+    evaluator = Evaluator(deconf_net)
     begin_time = time.time()
     
     start_epoch = 1
-    ori_cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0
+    ori_cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0, 0.0
     ori_cla_best_state, rec_cla_best_state, hybrid_cla_best_state, last_state = {}, {}, {}, {}
     
     for epoch in range(start_epoch, args.epochs+1):
+    
         trainer.train_epoch()
-        val_metrics = evaluator.eval_hybrid_classification(test_loader)
+        val_metrics = evaluator.eval_deconf_hybrid_classification(test_loader)
         
         ori_cla_best = val_metrics['ori_test_accuracy'] > ori_cla_best_acc
         ori_cla_best_acc = max(val_metrics['ori_test_accuracy'], ori_cla_best_acc)
@@ -130,18 +130,20 @@ def main(args):
         if epoch == args.epochs:
             last_state = {
                 'epoch': epoch,
-                'arch': args.arch,
-                'state_dict': classifier.state_dict(),
+                'feature_extractor': args.feature_extractor,
+                'h': args.h,
+                'state_dict': deconf_net.state_dict(),
                 'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
                 'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
             }
-
+        
         if ori_cla_best:
             ori_cla_best_state = {
                 'epoch': epoch,
-                'arch': args.arch,
-                'state_dict': copy.deepcopy(classifier.state_dict()),
+                'feature_extractor': args.feature_extractor,
+                'h': args.h,
+                'state_dict': copy.deepcopy(deconf_net.state_dict()),
                 'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
                 'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
@@ -150,8 +152,9 @@ def main(args):
         if rec_cla_best:
             rec_cla_best_state = {
                 'epoch': epoch,
-                'arch': args.arch,
-                'state_dict': copy.deepcopy(classifier.state_dict()),
+                'feature_extractor': args.feature_extractor,
+                'h': args.h,
+                'state_dict': copy.deepcopy(deconf_net.state_dict()),
                 'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
                 'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
@@ -160,15 +163,17 @@ def main(args):
         if hybrid_cla_best:
             hybrid_cla_best_state = {
                 'epoch': epoch,
-                'arch': args.arch,
-                'state_dict': copy.deepcopy(classifier.state_dict()),
+                'feature_extractor': args.feature_extractor,
+                'h': args.h,
+                'state_dict': copy.deepcopy(deconf_net.state_dict()),
                 'cla_acc': val_metrics['ori_test_accuracy'],
                 'rec_cla_acc': val_metrics['rec_test_accuracy'],
                 'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
             }
 
+        
         print(
-            "---> Epoch {:3d} | Time {:5d}s".format(
+            "---> Epoch {:4d} | Time {:5d}s".format(
                 epoch,
                 int(time.time() - begin_time)
             ),
@@ -193,19 +198,20 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Train Classifier with hybrid images')
+    parser = argparse.ArgumentParser(description='Train Deconf-net')
     parser.add_argument('--seed', default=1, type=int, help='seed for initialize training')
-    parser.add_argument('--arch', type=str, default='wide_resnet')
-    parser.add_argument('--pretrained', action='store_true', default=False)
-    parser.add_argument('--pretrain_path', type=str, default='snapshots')
+    parser.add_argument('--data_dir', help='directory to store datasets', default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='tmp')
+    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet')
+    parser.add_argument('--dataset', type=str, default='cifar10')
+    parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
+    parser.add_argument('--h', type=str, default='inner')  # inner, euclidean, cosine
+    parser.add_argument('--pretrained', action='store_true', default=False)
+    parser.add_argument('--pretrain_path', type=str, default='./snapshots')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--data_dir', help='directory to store datasets', default='data/datasets')
-    parser.add_argument('--dataset', type=str, default='cifar10')
+    parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4, help='number of dataloader workers')
     parser.add_argument('--gpu_idx', help='used gpu idx', type=int, default=0)

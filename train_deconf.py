@@ -69,7 +69,7 @@ def main(args):
     print('>>> Deconf: {} - {}'.format(args.feature_extractor, args.h))
     deconf_net = get_deconf_net(args.feature_extractor, args.h, num_classes)
     
-    # move classifier to gpu device
+    # move deconf_net to gpu device
     gpu_idx = int(args.gpu_idx)
     if torch.cuda.is_available():
         torch.cuda.set_device(gpu_idx)

@@ -5,6 +5,7 @@ from .deconf_trainer import DeconfTrainer
 from .cla_hybrid_trainer import ClassifierHybridTrainer
 from .cla_oe_trainer import ClassifierOeTrainer
 from .cla_hybrid_oe_trainer import ClassifierHybridOeTrainer
+from .deconf_hybrid_trainer import DeconfHybridTrainer
 
 
 def get_ae_trainer(ae, train_loader, optimizer, scheduler, data_mode):
@@ -12,6 +13,9 @@ def get_ae_trainer(ae, train_loader, optimizer, scheduler, data_mode):
 
 def get_deconf_trainer(deconf_net, train_loader, optimizer, h_optimizer, scheduler, h_scheduler):
     return DeconfTrainer(deconf_net, train_loader, optimizer, h_optimizer, scheduler, h_scheduler)
+
+def get_deconf_hybrid_trainer(deconf_net, train_loader, optimizer, h_optimizer, scheduler, h_scheduler):
+    return DeconfHybridTrainer(deconf_net, train_loader, optimizer, h_optimizer, scheduler, h_scheduler)
 
 def get_classifier_trainer(classifier, train_loader, optimizer, scheduler):
     return ClassifierTrainer(classifier, train_loader, optimizer, scheduler)

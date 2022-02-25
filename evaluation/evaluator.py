@@ -71,6 +71,49 @@ class Evaluator():
 
         return metrics
     
+    
+    def eval_hybrid_classification(self, data_loader):
+        self.net.eval()
+        
+        total = 0
+        ori_correct, rec_correct = 0, 0
+        total_loss = 0.0
+        
+        with torch.no_grad():
+            for sample in data_loader:
+                assert len(sample) == 3
+                ori_data, rec_data, target = sample
+                ori_data, rec_data, target = ori_data.cuda(), rec_data.cuda(), target.cuda()
+                ori_logit = self.net(ori_data)
+                rec_logit = self.net(rec_data)
+                
+                loss = F.cross_entropy(ori_logit, target) + F.cross_entropy(rec_logit, target)
+                total_loss += loss.item()
+                ori_pred = ori_logit.data.max(dim=1)[1]
+                rec_pred = rec_logit.data.max(dim=1)[1]
+                total += target.size(dim=0)
+                ori_correct += ori_pred.eq(target.data).sum().item()
+                rec_correct += rec_pred.eq(target.data).sum().item()
+        
+        # average on sample
+        print("[cla loss: {:.4f} | ori cla acc: {:.4f}% | rec cla acc: {:.4f}% | hybrid cla acc: {:.4f}%]".format(
+            total_loss / len(data_loader.dataset),
+            100. * ori_correct / total,
+            100. * rec_correct / total,
+            100. * (ori_correct + rec_correct) / (2 * total)
+            )
+        )
+        
+        metrics = {
+            'test_loss': total_loss / len(data_loader),
+            'ori_test_accuracy': 100. * ori_correct / total,
+            'rec_test_accuracy': 100. * rec_correct / total,
+            'hybrid_test_accuracy': 100. * (ori_correct + rec_correct) / (2 * total)
+        }
+        
+        return metrics
+    
+    
     def eval_deconf_classification(self, data_loader):
         self.net.eval()
         
@@ -106,42 +149,7 @@ class Evaluator():
         return metrics
     
     
-    def eval_co_classification(self, data_loader):
-        self.net.eval()
-        
-        total = 0
-        cor_correct, ori_correct = 0, 0
-        
-        with torch.no_grad():
-            for sample in data_loader:
-                assert len(sample) == 3
-                cor_data, data, target = sample
-                cor_data, data, target = cor_data.cuda(), data.cuda(), target.cuda()
-                cor_logit = self.net(cor_data)
-                ori_logit = self.net(data)
-                
-                cor_pred = cor_logit.data.max(dim=1)[1]
-                ori_pred = ori_logit.data.max(dim=1)[1]
-                total += target.size(dim=0)
-                cor_correct += cor_pred.eq(target.data).sum().item()
-                ori_correct += ori_pred.eq(target.data).sum().item()
-            
-        # average on sample
-        print('[cor cla acc: {:.4f}% | ori cla acc: {:.4f}%]'.format(
-            100. * cor_correct / total,
-            100. * ori_correct / total
-            )
-        )
-        
-        metrics = {
-            'cor_cla_acc': 100. * cor_correct / total,
-            'ori_cla_acc': 100. * ori_correct / total
-        }
-        
-        return metrics
-
-
-    def eval_hybrid_classification(self, data_loader):
+    def eval_deconf_hybrid_classification(self, data_loader):
         self.net.eval()
         
         total = 0
@@ -153,8 +161,8 @@ class Evaluator():
                 assert len(sample) == 3
                 ori_data, rec_data, target = sample
                 ori_data, rec_data, target = ori_data.cuda(), rec_data.cuda(), target.cuda()
-                ori_logit = self.net(ori_data)
-                rec_logit = self.net(rec_data)
+                ori_logit, _, _ = self.net(ori_data)
+                rec_logit, _, _ = self.net(rec_data)
                 
                 loss = F.cross_entropy(ori_logit, target) + F.cross_entropy(rec_logit, target)
                 total_loss += loss.item()
@@ -163,7 +171,7 @@ class Evaluator():
                 total += target.size(dim=0)
                 ori_correct += ori_pred.eq(target.data).sum().item()
                 rec_correct += rec_pred.eq(target.data).sum().item()
-        
+
         # average on sample
         print("[cla loss: {:.4f} | ori cla acc: {:.4f}% | rec cla acc: {:.4f}% | hybrid cla acc: {:.4f}%]".format(
             total_loss / len(data_loader.dataset),
