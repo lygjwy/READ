@@ -31,10 +31,37 @@ class DeconfHybridTrainer():
             ori_data, rec_data, target = sample
             ori_data, rec_data, target = ori_data.cuda(), rec_data.cuda(), target.cuda()
             
-            ori_logit, _, _ = self.deconf_net(ori_data)
-            rec_logit, _, _ = self.deconf_net(rec_data)
-            # add extra diff loss item? ori & rec diff
-            loss = 0.5 * F.cross_entropy(ori_logit, target) + 0.5 * F.cross_entropy(rec_logit, target)
+            ori_feature = self.deconf_net.feature_extractor(ori_data)
+            rec_feature = self.deconf_net.feature_extractor(rec_data)
+            
+            if self.deconf_net.h.name == 'cosine':
+                diff = (-torch.cosine_similarity(ori_feature, rec_feature, dim=1) + 1.0) / 2  # rescale to [0, 1]
+            elif self.deconf_net.h.name == 'euclidean':
+                diff = ((ori_feature - rec_feature).pow(2)).mean(1)
+            elif self.deconf_net.h.name == 'inner':
+                # intractable
+                # diff = -torch.bmm(ori_feature.view(target.size(0), 1, -1), rec_feature.view(target.size(0), -1, 1))
+                # diff = torch.squeeze(diff)
+                
+                # tractable
+                diff = torch.zeros(128, dtype=torch.float).cuda()
+            else:
+                raise RuntimeError('<--- invalid h: '.format(self.deconf_net.h.name))
+        
+            h, g = self.deconf_net.h(ori_feature), self.deconf_net.g(ori_feature)
+            ori_logit = h / g
+            
+            rec_h, rec_g = self.deconf_net.h(rec_feature), self.deconf_net.g(rec_feature)
+            rec_logit = rec_h / rec_g
+            
+            # ori_logit, _, _ = self.deconf_net(ori_data)
+            # rec_logit, _, _ = self.deconf_net(rec_data)
+            
+            # loss-1: ori_ce_loss + rec_ce_loss
+            # loss = 0.5 * F.cross_entropy(ori_logit, target) + 0.5 * F.cross_entropy(rec_logit, target)
+            
+            # loss-2: ori_ce_loss + mean_feature_diff_loss
+            loss = F.cross_entropy(ori_logit, target) + diff.mean(0)
             
             # backward
             self.optimizer.zero_grad()

@@ -61,10 +61,13 @@ class InnerDeconf(nn.Module):
 def get_h(h_name, in_features, num_classes):
     if h_name == 'inner':
         h = InnerDeconf(in_features, num_classes)
+        h.name = 'inner'
     elif h_name == 'euclidean':
         h = EuclideanDeconf(in_features, num_classes)
+        h.name = 'euclidean'
     elif h_name == 'cosine':
         h = CosineDeconf(in_features, num_classes)
+        h.name = 'cosine'
     else:
         raise RuntimeError('<--- invalid h name: {}'.format(h_name))
     

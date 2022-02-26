@@ -50,7 +50,7 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
             rec_penultimate_feature = deconf_net.intermediate_forward(rec_data)
             rec_h = deconf_net.h(rec_penultimate_feature)
         
-        ori_score, cla_idx = torch.max(h, dim=1) 
+        ori_score, cla_idx = torch.max(h, dim=1)
         ori_scores.extend(ori_score.tolist())
         
         # the same category
@@ -73,10 +73,10 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
     
     # combine ori_scores & similarity_scores
     # ? how to use image complexity as weight
-    # for ori_score, similarity_score in zip(ori_scores, similarity_scores):
-    #     hybrid_scores.append(ori_score + similarity_score)
-    for ori_score, rec_score in zip(ori_scores, rec_scores):
-        hybrid_scores.append(ori_score + rec_score)
+    for ori_score, similarity_score in zip(ori_scores, similarity_scores):
+        hybrid_scores.append(ori_score + 0.5 * similarity_score)
+    # for ori_score, rec_score in zip(ori_scores, rec_scores):
+    #     hybrid_scores.append(ori_score + rec_score)
     return hybrid_scores
 
 
