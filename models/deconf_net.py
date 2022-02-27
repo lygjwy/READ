@@ -97,9 +97,9 @@ class DeconfNet(nn.Module):
         
         quotients = numerators / denominators
         return quotients, numerators, denominators
-    
-    
-    def intermediate_forward(self, x):
+
+
+    def penultimate_feature(self, x):
         return self.feature_extractor(x)
 
     

@@ -45,9 +45,9 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
             data = torch.stack([normalize(img) for img in data], dim=0)
             rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
         
-            penultimate_feature = deconf_net.intermediate_forward(data)
+            penultimate_feature = deconf_net.penultimate_feature(data)
             h = deconf_net.h(penultimate_feature)
-            rec_penultimate_feature = deconf_net.intermediate_forward(rec_data)
+            rec_penultimate_feature = deconf_net.penultimate_feature(rec_data)
             rec_h = deconf_net.h(rec_penultimate_feature)
         
         ori_score, cla_idx = torch.max(h, dim=1)

@@ -33,8 +33,8 @@ class BasicBlock(nn.Module):
             return torch.add(self.convShortcut(x), out)
         else:
             return torch.add(x, out)
-        
-    
+
+
 class NetworkBlock(nn.Module):
     def __init__(self, nb_layers, in_planes, out_planes, block, stride, dropRate=0.0):
         super(NetworkBlock, self).__init__()
@@ -101,6 +101,16 @@ class WideResNet(nn.Module):
         out = self.block2(out)
         out = self.block3(out)
         out = self.relu(self.bn1(out))
+        return out
+    
+    def penultimate_feature(self, x):
+        out = self.conv1(x)
+        out = self.block1(out)
+        out = self.block2(out)
+        out = self.block3(out)
+        out = self.relu(self.bn1(out))
+        out = F.avg_pool2d(out, 8)
+        out = out.view(-1, self.nChannels)  # batch_size * se;f.nChannels
         return out
     
     def feature_list(self, x):

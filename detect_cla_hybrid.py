@@ -18,7 +18,7 @@ class Normalize(object):
     def __init__(self, mean, std):
         self.mean = mean
         self.std = std
-      
+
     def __call__(self, tensor):
         for t, m, s in zip(tensor, self.mean, self.std):
             # t.mul_(s).add_(m)
@@ -26,11 +26,12 @@ class Normalize(object):
         return tensor
 
 
-def get_aea_scores(ae, classifier, data_loader, normalize):
+def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination):
+    # feature level
     ae.eval()
     classifier.eval()
     
-    uni_ori_kls, ori_rec_kls, aea_scores = [], [], []
+    ori_scores, rec_scores, similarity_scores, hybrid_scores = [], [], [], []
     
     for sample in data_loader:
         if data_loader.dataset.labeled:
@@ -41,28 +42,94 @@ def get_aea_scores(ae, classifier, data_loader, normalize):
         
         with torch.no_grad():
             rec_data = ae(data)
-        
+            
             data = torch.stack([normalize(img) for img in data], dim=0)
             rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
+            
+            penultimate_feature = classifier.penultimate_feature(data)
+            rec_penultimate_feature = classifier.penultimate_feature(rec_data)
+            
+            ori_score, cla_idx = torch.max(classifier.fc(penultimate_feature), dim=1)
+            ori_scores.extend(ori_score.tolist())
+            
+            cla_idx = torch.unsqueeze(cla_idx, 0).t()  # column vector
+            rec_score = torch.gather(classifier.fc(rec_penultimate_feature), dim=1, index=cla_idx)
+            rec_scores.extend(torch.squeeze(rec_score).tolist())
+    
+            # calculate the ori & rec similarity
+            similarity = torch.bmm(penultimate_feature.view(args.batch_size, 1, -1), rec_penultimate_feature.view(args.batch_size, -1, 1))
+            similarity = torch.squeeze(similarity)
+
+            similarity_scores.extend(similarity.tolist())
+    
+    # combine
+    if combination == 'ori':
+        return ori_scores
+    elif combination == 'diff':
+        return similarity_scores
+    elif combination == 'hybrid':
+        for ori_score, similarity_score in zip(ori_scores, similarity_scores):
+            hybrid_scores.append(ori_score + similarity_score)
+        return hybrid_scores
+    else:
+        raise RuntimeError('<--- invalid combination: {}'.format(combination))
+
+
+def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
+    # pred distribution level
+    ae.eval()
+    classifier.eval()
+    
+    ori_scores, rec_scores, diff_scores, hybrid_scores = [], [], [], []
+    
+    for sample in data_loader:
+        if data_loader.dataset.labeled:
+            data, _ = sample
+        else:
+            data = sample
+        data = data.cuda()
         
         with torch.no_grad():
+            rec_data = ae(data)
+            
+            data = torch.stack([normalize(img) for img in data], dim=0)
+            rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
+            
             ori_logit = classifier(data)
             rec_logit = classifier(rec_data)
             ori_softmax = torch.softmax(ori_logit, dim=1)
             rec_softmax = torch.softmax(rec_logit, dim=1)
+            
+            uniform_dist = torch.ones_like(ori_softmax) * (1 / ori_softmax.shape[1])
+            ori_scores.extend(torch.sum(F.kl_div(ori_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
+            rec_scores.extend(torch.sum(F.kl_div(rec_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
         
-        uniform_dist = torch.ones_like(ori_softmax) * (1 / ori_softmax.shape[1])
-        uni_ori_kls.extend(torch.sum(F.kl_div(ori_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
-        ori_rec_kls.extend(torch.sum(F.kl_div(rec_softmax.log(), ori_softmax, reduction='none'), dim=1).tolist())
-        
-    for uni_ori_kl, ori_rec_kl in zip(uni_ori_kls, ori_rec_kls):
-        aea_scores.append(uni_ori_kl - ori_rec_kl)
-    return aea_scores
+            diff_scores.extend(torch.sum(F.kl_div(rec_softmax.log(), ori_softmax, reduction='none'), dim=1).tolist())
+    
+    # combine
+    if combination == 'ori':
+        return ori_scores
+    elif combination == 'diff':
+        return [-1.0 * diff_score for diff_score in diff_scores]
+    elif combination == 'hybrid':
+        for ori_score, diff_score in zip(ori_scores, diff_scores):
+            hybrid_scores.append(ori_score - diff_score)
+        return hybrid_scores
+    else:
+        raise RuntimeError('<--- invalid combination: {}'.format(combination))
+
+
+# def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_mean, precision, normalize, combination):
+#     ae.eval()
+#     classifier.eval()
 
 
 scores_dic = {
-    'aea': get_aea_scores
+    'hybrid_inner': get_hybrid_inner_scores,
+    'hybrid_maha': get_hybrid_maha_scores,
+    'hybrid_kl': get_hybrid_kl_scores
 }
+
 
 def draw_hist(data, colors, labels, title, fig_path):
     plt.clf()
@@ -133,14 +200,13 @@ def main(args):
     get_scores = scores_dic[args.scores]
     result_dic_list = []
 
-    #  detect ood utilizing kl-divergence between ori-img & rec-img prediction distribution
-    id_scores = get_scores(ae, classifier, id_loader, normalize)
+    id_scores = get_scores(ae, classifier, id_loader, normalize, args.combination)
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
         result_dic = {'name': ood_loader.dataset.name}
         
-        ood_scores = get_scores(ae, classifier, ood_loader, normalize)
+        ood_scores = get_scores(ae, classifier, ood_loader, normalize, args.combination)
         ood_label = np.ones(len(ood_scores))
         scores = np.concatenate([id_scores, ood_scores])
         labels = np.concatenate([id_label, ood_label])
@@ -175,8 +241,9 @@ if __name__ == '__main__':
     parser.add_argument('--ae', type=str, default='res_ae')
     parser.add_argument('--ae_path', type=str, default='./snapshots/r.pth')
     parser.add_argument('--classifier', type=str, default='wide_resnet')
-    parser.add_argument('--classifier_path', type=str, default='./snapshots/ph.pth')
-    parser.add_argument('--scores', type=str, default='aea')
+    parser.add_argument('--classifier_path', type=str, default='./snapshots/p.pth')
+    parser.add_argument('--scores', type=str, default='hybrid_inner')
+    parser.add_argument('--combination', type=str, default='hybrid')  # ori, diff, both 
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--gpu_idx', type=int, default=0)
