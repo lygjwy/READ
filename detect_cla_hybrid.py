@@ -34,12 +34,9 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
     ori_scores, rec_scores, similarity_scores, hybrid_scores = [], [], [], []
     
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
-        
+        data = sample['data'].cuda()
+        complexity = sample['complexity'].cuda()
+
         with torch.no_grad():
             rec_data = ae(data)
             
@@ -60,6 +57,7 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
             similarity = torch.bmm(penultimate_feature.view(args.batch_size, 1, -1), rec_penultimate_feature.view(args.batch_size, -1, 1))
             similarity = torch.squeeze(similarity)
 
+            # process the similarity scores
             similarity_scores.extend(similarity.tolist())
     
     # combine
@@ -80,14 +78,13 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
     ae.eval()
     classifier.eval()
     
+    complexities = []
     ori_scores, rec_scores, diff_scores, hybrid_scores = [], [], [], []
     
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
+        complexity = sample['complexity']
+        complexities.extend(complexity.tolist())
         
         with torch.no_grad():
             rec_data = ae(data)
@@ -105,15 +102,26 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
             rec_scores.extend(torch.sum(F.kl_div(rec_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
         
             diff_scores.extend(torch.sum(F.kl_div(rec_softmax.log(), ori_softmax, reduction='none'), dim=1).tolist())
+            # print(diff_scores)
+
+    # change complexities
     
+    diff_coefficients = []
+    for complexity in complexities:
+        if complexity <= 0.65 or complexity >= 0.85:
+            diff_coefficients.append(100.0)
+        else:
+            diff_coefficients.append(1.0)
+    
+    similarity_scores = [-1.0 * diff_score * diff_coefficient for diff_score, diff_coefficient in zip(diff_scores, diff_coefficients)]
     # combine
     if combination == 'ori':
         return ori_scores
     elif combination == 'diff':
-        return [-1.0 * diff_score for diff_score in diff_scores]
+        return similarity_scores
     elif combination == 'hybrid':
-        for ori_score, diff_score in zip(ori_scores, diff_scores):
-            hybrid_scores.append(ori_score - diff_score)
+        for ori_score, similarity_score in zip(ori_scores, similarity_scores):
+            hybrid_scores.append(ori_score + similarity_score)
         return hybrid_scores
     else:
         raise RuntimeError('<--- invalid combination: {}'.format(combination))
@@ -126,7 +134,7 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
 
 scores_dic = {
     'hybrid_inner': get_hybrid_inner_scores,
-    'hybrid_maha': get_hybrid_maha_scores,
+    # 'hybrid_maha': get_hybrid_maha_scores,
     'hybrid_kl': get_hybrid_kl_scores
 }
 

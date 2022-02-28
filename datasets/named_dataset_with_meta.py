@@ -54,18 +54,24 @@ class NamedDatasetWithMeta(VisionDataset):
         # load dataset samples & targets info
         if split == 'train':
             self.entry_path = dataset_path / 'train.txt'
+            self.complexity_path = dataset_path / 'train_complexity.txt'
         elif split == 'test':
             self.entry_path = dataset_path / 'test.txt'
+            self.complexity_path = dataset_path / 'test_complexity.txt'
         else:
             raise RuntimeError('<--- Invalid split: {}'.format(split))
 
         if not self.entry_path.is_file():
-            raise RuntimeError('<--- Split entry file: {} not exist'.format(str(self.entry_path)))
+            raise RuntimeError('<--- Split entry file: {} not exist.'.format(str(self.entry_path)))
 
+        if not self.complexity_path.is_file():
+            raise RuntimeError('<--- Split complexity file: {} not exist.'.format(str(self.complexity_path)))
+        
         self.classes, self.class_to_idx = self._find_classes(dataset_path)
         
         # read entry data from entry file
         self.samples = self._parse_entry_file()
+        self.complexities = self._parse_complexity_file()
 
 
     def _find_classes(self, dataset_path):
@@ -92,7 +98,7 @@ class NamedDatasetWithMeta(VisionDataset):
         
         tokens_list = [entry.strip().split(' ') for entry in entries]
         samples = []
-        
+
         for tokens in tokens_list:
             img_path = str(self.root / tokens[0].replace('\\', '/'))
             
@@ -107,9 +113,30 @@ class NamedDatasetWithMeta(VisionDataset):
         return samples
 
 
+    def _parse_complexity_file(self):
+        
+        with open(self.complexity_path, 'r') as cf:
+            complexities = cf.readlines()
+            
+        tokens_list = [complexity.strip().split(' ') for complexity in complexities]
+        complexities = []
+        
+        for tokens in tokens_list:
+            img_path = str(self.root / tokens[0].replace('\\', '/'))
+            
+            if is_img_file(img_path):
+                complexities.append((img_path, int(tokens[1])))
+            else:
+                raise RuntimeError('<--- invalid image path: {}'.format(img_path))
+            
+        return complexities
+    
+      
     def __getitem__(self, index):
         sample = self.samples[index]
+        complexity = self.complexities[index]
 
+        assert sample[0] == complexity[0]
         image_path = sample[0]
         image = default_loader(image_path)
         if self.transform is not None:
@@ -119,10 +146,10 @@ class NamedDatasetWithMeta(VisionDataset):
             target = sample[1]
             if self.target_transform is not None:
                 target = self.target_transform(target)
-            return image, target
+            return {'data': image, 'label': target, 'complexity': complexity[1] / 3072.}
         else:
-            return image
+            return {'data': image, 'complexity': complexity[1] / 3072.}
     
-
+    
     def __len__(self):
         return len(self.samples)
