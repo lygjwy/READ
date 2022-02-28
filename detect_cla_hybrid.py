@@ -4,6 +4,7 @@ from pathlib import Path
 from functools import partial
 import argparse
 import matplotlib.pyplot as plt
+import sklearn.covariance
 
 import torch
 import torch.nn.functional as F
@@ -31,12 +32,14 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
     ae.eval()
     classifier.eval()
     
-    ori_scores, rec_scores, similarity_scores, hybrid_scores = [], [], [], []
+    complexities = []
+    ori_scores, similarities, hybrid_scores = [], [], [], []
     
     for sample in data_loader:
         data = sample['data'].cuda()
-        complexity = sample['complexity'].cuda()
-
+        complexity = sample['complexity']
+        complexities.extend(complexity.tolist())
+        
         with torch.no_grad():
             rec_data = ae(data)
             
@@ -46,28 +49,33 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
             penultimate_feature = classifier.penultimate_feature(data)
             rec_penultimate_feature = classifier.penultimate_feature(rec_data)
             
-            ori_score, cla_idx = torch.max(classifier.fc(penultimate_feature), dim=1)
+            ori_score, _ = torch.max(classifier.fc(penultimate_feature), dim=1)
             ori_scores.extend(ori_score.tolist())
             
-            cla_idx = torch.unsqueeze(cla_idx, 0).t()  # column vector
-            rec_score = torch.gather(classifier.fc(rec_penultimate_feature), dim=1, index=cla_idx)
-            rec_scores.extend(torch.squeeze(rec_score).tolist())
-    
             # calculate the ori & rec similarity
             similarity = torch.bmm(penultimate_feature.view(args.batch_size, 1, -1), rec_penultimate_feature.view(args.batch_size, -1, 1))
             similarity = torch.squeeze(similarity)
 
             # process the similarity scores
-            similarity_scores.extend(similarity.tolist())
+            similarities.extend(similarity.tolist())
     
+    # change complexities
+    simi_coefficients = []
+    for complexity in complexities:
+        if complexity <= 0.65 or complexity >= 0.85:
+            simi_coefficients.append(0.01)
+        else:
+            simi_coefficients.append(1.0)
+    
+    simi_scores = [similarity * simi_coefficient for similarity, simi_coefficient in zip(similarities, simi_coefficients)]
     # combine
     if combination == 'ori':
         return ori_scores
     elif combination == 'diff':
-        return similarity_scores
+        return simi_scores
     elif combination == 'hybrid':
-        for ori_score, similarity_score in zip(ori_scores, similarity_scores):
-            hybrid_scores.append(ori_score + similarity_score)
+        for ori_score, simi_score in zip(ori_scores, simi_scores):
+            hybrid_scores.append(ori_score + simi_score)
         return hybrid_scores
     else:
         raise RuntimeError('<--- invalid combination: {}'.format(combination))
@@ -79,7 +87,7 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
     classifier.eval()
     
     complexities = []
-    ori_scores, rec_scores, diff_scores, hybrid_scores = [], [], [], []
+    ori_scores, differents, hybrid_scores = [], [], [], []
     
     for sample in data_loader:
         data = sample['data'].cuda()
@@ -99,13 +107,9 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
             
             uniform_dist = torch.ones_like(ori_softmax) * (1 / ori_softmax.shape[1])
             ori_scores.extend(torch.sum(F.kl_div(ori_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
-            rec_scores.extend(torch.sum(F.kl_div(rec_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
-        
-            diff_scores.extend(torch.sum(F.kl_div(rec_softmax.log(), ori_softmax, reduction='none'), dim=1).tolist())
-            # print(diff_scores)
+            differents.extend(torch.sum(F.kl_div(rec_softmax.log(), ori_softmax, reduction='none'), dim=1).tolist())
 
     # change complexities
-    
     diff_coefficients = []
     for complexity in complexities:
         if complexity <= 0.65 or complexity >= 0.85:
@@ -113,29 +117,165 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
         else:
             diff_coefficients.append(1.0)
     
-    similarity_scores = [-1.0 * diff_score * diff_coefficient for diff_score, diff_coefficient in zip(diff_scores, diff_coefficients)]
+    simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
     # combine
     if combination == 'ori':
         return ori_scores
     elif combination == 'diff':
-        return similarity_scores
+        return simi_scores
     elif combination == 'hybrid':
-        for ori_score, similarity_score in zip(ori_scores, similarity_scores):
-            hybrid_scores.append(ori_score + similarity_score)
+        for ori_score, simi_score in zip(ori_scores, simi_scores):
+            hybrid_scores.append(ori_score + simi_score)
         return hybrid_scores
     else:
         raise RuntimeError('<--- invalid combination: {}'.format(combination))
 
 
-# def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_mean, precision, normalize, combination):
-#     ae.eval()
-#     classifier.eval()
+def sample_estimator(classifier, data_loader, normalize, num_classes, feature_dim_list):
+    classifier.eval()
+    group_lasso = sklearn.covariance.EmpiricalCovariance(assume_centered=False)
+    
+    num_layers = len(feature_dim_list)  # num of layers
+    num_sample_per_class = np.zeros(num_classes)
+    list_features = [[0] * num_classes] * num_layers
+    
+    for sample in data_loader:
+        data = sample['data'].cuda()
+        target = sample['label'].cuda()
+        
+        data = torch.stack([normalize(img) for img in data], dim=0)
+        hidden_features = classifier.feature_list(data)
+        
+        # get hidden features
+        for i in range(num_layers):
+            hidden_features[i] = hidden_features[i].view(hidden_features[i].size(0), hidden_features[i].size(1), -1)
+            hidden_features[i] = torch.mean(hidden_features[i].data, 2) # shape [batch_size, nChannels]
+        
+        # construct the sample matrix
+        for i in range(target.size(0)):
+            label = target[i]
+            if num_sample_per_class[label] == 0:
+                layer_count = 0
+                for hidden_feature in hidden_features:
+                    list_features[layer_count][label] = hidden_feature[i].view(1, -1)
+                    layer_count += 1
+            else:
+                layer_count = 0
+                for hidden_feature in hidden_features:
+                    list_features[layer_count][label] = torch.cat((list_features[layer_count][label], hidden_feature[i].view(1, -1)), 0)
+                    layer_count += 1
+            num_sample_per_class[label] += 1
+
+    category_sample_mean = []
+    layer_count = 0
+    for feature_dim in feature_dim_list:
+        tmp_list = torch.Tensor(num_classes, int(feature_dim)).cuda()
+        for j in range(num_classes):
+            tmp_list[j] = torch.mean(list_features[layer_count][j], 0)
+        category_sample_mean.append(tmp_list)
+        layer_count += 1
+    
+    precision = []
+    for k in range(num_layers):
+        X = 0
+        for i in range(num_classes):
+            if i == 0:
+                X = list_features[k][i] - category_sample_mean[k][i]
+            else:
+                X = torch.cat((X, list_features[k][i] - category_sample_mean[k][i]), 0)
+        
+        # find inverse
+        group_lasso.fit(X.cpu().numpy())
+        tmp_precision = group_lasso.precision_
+        tmp_precision = torch.from_numpy(tmp_precision).float().cuda()
+        precision.append(tmp_precision)
+    
+    return category_sample_mean, precision
+
+
+def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_mean, precision, layer_index, normalize, combination):
+    # prediction distribution level
+    ae.eval()
+    classifier.eval()
+
+    complexities = []
+    ori_scores, differents, hybrid_scores = [], [], []
+    
+    for sample in data_loader:
+        data = sample['data'].cuda()
+        complexity = sample['complexity']
+        complexities.extend(complexity.tolist())
+        
+        with torch.no_grad():
+            rec_data = ae(data)
+            
+            data = torch.stack([normalize(img) for img in data], dim=0)
+            rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
+            
+            hidden_feature = classifier.hidden_feature(data, layer_index)
+            hidden_feature = hidden_feature.view(hidden_feature.size(0), hidden_feature.size(1), -1)
+            hidden_feature = torch.mean(hidden_feature, 2)
+            
+            rec_hidden_feature = classifier.hidden_feature(rec_data, layer_index)
+            rec_hidden_feature = rec_hidden_feature.view(rec_hidden_feature.size(0), rec_hidden_feature.size(1), -1)
+            rec_hidden_feature = torch.mean(rec_hidden_feature, 2)
+            
+            gaussian_score = 0
+            rec_gaussian_score = 0
+            
+            for i in range(num_classes):
+                category_sample_mean = sample_mean[layer_index][i]
+                zero_f = hidden_feature.data - category_sample_mean
+                rec_zero_f = rec_hidden_feature.data - category_sample_mean
+                term_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+                rec_term_gau = -0.5 * torch.mm(torch.mm(rec_zero_f, precision[layer_index]), rec_zero_f.t()).diag()
+                
+                if i == 0:
+                    gaussian_score = term_gau.view(-1, 1)
+                    rec_gaussian_score = rec_term_gau.view(-1, 1)
+                else:
+                    gaussian_score = torch.cat((gaussian_score, term_gau.view(-1, 1)), 1)
+                    rec_gaussian_score = torch.cat((rec_gaussian_score, rec_term_gau.view(-1, 1)), 1)
+
+            # ori_maha_softmax = torch.softmax(gaussian_score, dim=1)
+            gaussian_score = gaussian_score - gaussian_score.max(dim=1, keepdims=True).values
+            ori_maha_softmax = gaussian_score.exp() / gaussian_score.exp().sum(dim=1, keepdims=True) + 1e-40  # prevent inf kl-div
+            
+            # rec_maha_softmax = torch.softmax(rec_gaussian_score, dim=1)
+            rec_gaussian_score = rec_gaussian_score - rec_gaussian_score.max(dim=1, keepdims=True).values
+            rec_maha_softmax = rec_gaussian_score.exp() / rec_gaussian_score.exp().sum(dim=1, keepdims=True) + 1e-40
+            
+            uniform_dist = torch.ones_like(ori_maha_softmax) * (1. / num_classes)
+            # get gaussian score [batch_size, num_classes]
+            ori_scores.extend(torch.sum(F.kl_div(ori_maha_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
+            differents.extend(torch.sum(F.kl_div(rec_maha_softmax.log(), ori_maha_softmax, reduction='none'), dim=1).tolist())
+    
+    # change complexities
+    diff_coefficients = []
+    for complexity in complexities:
+        if complexity <= 0.65 or complexity >= 0.85:
+            diff_coefficients.append(100.0)
+        else:
+            diff_coefficients.append(1.0)
+    
+    simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
+     # combine
+    if combination == 'ori':
+        return ori_scores
+    elif combination == 'diff':
+        return simi_scores
+    elif combination == 'hybrid':
+        for ori_score, simi_score in zip(ori_scores, simi_scores):
+            hybrid_scores.append(ori_score + simi_score)
+        return hybrid_scores
+    else:
+        raise RuntimeError('<--- invalid combination: {}'.format(combination))
 
 
 scores_dic = {
     'hybrid_inner': get_hybrid_inner_scores,
-    # 'hybrid_maha': get_hybrid_maha_scores,
-    'hybrid_kl': get_hybrid_kl_scores
+    'hybrid_kl': get_hybrid_kl_scores,
+    'hybrid_maha_kl': get_hybrid_maha_kl_scores
 }
 
 
@@ -208,13 +348,24 @@ def main(args):
     get_scores = scores_dic[args.scores]
     result_dic_list = []
 
-    id_scores = get_scores(ae, classifier, id_loader, normalize, args.combination)
+    if args.scores == 'hybrid_maha_kl':
+        num_layers = 1
+        feature_dim_list = np.empty(num_layers)
+        feature_dim_list[0] = 128  # for wide_resnet
+        
+        sample_mean, precision = sample_estimator(classifier, id_loader, normalize, num_classes, feature_dim_list)
+        id_scores = get_hybrid_maha_kl_scores(ae, classifier, id_loader, num_classes, sample_mean, precision, num_layers-1, normalize, args.combination)
+    else:
+        id_scores = get_scores(ae, classifier, id_loader, normalize, args.combination)
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
         result_dic = {'name': ood_loader.dataset.name}
         
-        ood_scores = get_scores(ae, classifier, ood_loader, normalize, args.combination)
+        if args.scores == 'hybrid_maha_kl':
+            ood_scores = get_hybrid_maha_kl_scores(ae, classifier, ood_loader, num_classes, sample_mean, precision, num_layers-1, normalize, args.combination)
+        else:
+            ood_scores = get_scores(ae, classifier, ood_loader, normalize, args.combination)
         ood_label = np.ones(len(ood_scores))
         scores = np.concatenate([id_scores, ood_scores])
         labels = np.concatenate([id_label, ood_label])
@@ -240,7 +391,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Reconstruciton Detect')
+    parser = argparse.ArgumentParser(description='Detect OOD using ori_score - coefficient * diff')
     parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
     parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
@@ -251,7 +402,7 @@ if __name__ == '__main__':
     parser.add_argument('--classifier', type=str, default='wide_resnet')
     parser.add_argument('--classifier_path', type=str, default='./snapshots/p.pth')
     parser.add_argument('--scores', type=str, default='hybrid_inner')
-    parser.add_argument('--combination', type=str, default='hybrid')  # ori, diff, both 
+    parser.add_argument('--combination', type=str, default='hybrid')  # ori, diff, hybrid 
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--gpu_idx', type=int, default=0)

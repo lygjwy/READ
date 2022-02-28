@@ -21,11 +21,7 @@ def get_msp_scores(classifier, data_loader):
     
     msp_scores = []
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         with torch.no_grad():
             logit = classifier(data)
@@ -42,11 +38,7 @@ def get_kl_scores(classifier, data_loader):
     kl_scores = []
     
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         with torch.no_grad():
             logit = classifier(data)
@@ -64,11 +56,7 @@ def get_odin_scores(classifier, data_loader, temperature=1000.0, magnitude=0.001
     odin_scores = []
     
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         data.requires_grad = True
         logit = classifier(data)
@@ -99,62 +87,51 @@ def get_odin_scores(classifier, data_loader, temperature=1000.0, magnitude=0.001
     return odin_scores
 
 
-def sample_estimator(classifier, data_loader, num_classes, feature_list):
+def sample_estimator(classifier, data_loader, num_classes, feature_dim_list):
     classifier.eval()
     group_lasso = sklearn.covariance.EmpiricalCovariance(assume_centered=False)
-    correct, total = 0, 0
     
-    num_output = len(feature_list)
+    num_layers = len(feature_dim_list)
     num_sample_per_class = np.zeros(num_classes)
-    list_features = []
-    for i in range(num_output):
-        tmp_list = []
-        for j in range(num_classes):
-            tmp_list.append(0)
-        list_features.append(tmp_list)
-        
+    list_features = [[0] * num_classes] * num_layers
+
     for sample in data_loader:
-        data, target = sample
-        data, target = data.cuda(), target.cuda()
-        total += target.size(0)
+        data = sample['data'].cuda()
+        target = sample['label'].cuda()
         
-        output, out_features = classifier.feature_list(data)
+        hidden_features = classifier.feature_list(data)
         
         # get hidden features
-        for i in range(num_output):
-            out_features[i] = out_features[i].view(out_features[i].size(0), out_features[i].size(1), -1)
-            out_features[i] = torch.mean(out_features[i].data, 2)
-        
-        # compute classification accuracy
-        _, pred = output.data.max(1)
-        correct += pred.eq(target).cpu().sum()
+        for i in range(num_layers):
+            hidden_features[i] = hidden_features[i].view(hidden_features[i].size(0), hidden_features[i].size(1), -1)
+            hidden_features[i] = torch.mean(hidden_features[i].data, 2)
         
         # construct the sample matrix
         for i in range(target.size(0)):
             label = target[i]
             if num_sample_per_class[label] == 0:
-                out_count = 0
-                for out in out_features:
-                    list_features[out_count][label] = out[i].view(1, -1)
-                    out_count += 1
+                layer_count = 0
+                for hidden_feature in hidden_features:
+                    list_features[layer_count][label] = hidden_feature[i].view(1, -1)
+                    layer_count += 1
             else:
-                out_count = 0
-                for out in out_features:
-                    list_features[out_count][label] = torch.cat((list_features[out_count][label], out[i].view(1, -1)), 0)
-                    out_count += 1
+                layer_count = 0
+                for hidden_feature in hidden_features:
+                    list_features[layer_count][label] = torch.cat((list_features[layer_count][label], hidden_feature[i].view(1, -1)), 0)
+                    layer_count += 1
             num_sample_per_class[label] += 1
-            
+    
     category_sample_mean = []
-    out_count = 0
-    for num_feature in feature_list:
-        tmp_list = torch.Tensor(num_classes, int(num_feature)).cuda()
+    layer_count = 0
+    for feature_dim in feature_dim_list:
+        tmp_list = torch.Tensor(num_classes, int(feature_dim)).cuda()
         for j in range(num_classes):
-            tmp_list[j] = torch.mean(list_features[out_count][j], 0)
+            tmp_list[j] = torch.mean(list_features[layer_count][j], 0)
         category_sample_mean.append(tmp_list)
-        out_count += 1
+        layer_count += 1
     
     precision = []
-    for k in range(num_output):
+    for k in range(num_layers):
         X = 0
         for i in range(num_classes):
             if i == 0:
@@ -167,9 +144,7 @@ def sample_estimator(classifier, data_loader, num_classes, feature_list):
         tmp_precision = group_lasso.precision_
         tmp_precision = torch.from_numpy(tmp_precision).float().cuda()
         precision.append(tmp_precision)
-       
-    # print('---> Training acc: {:.2f}%'.format(100. * correct / total))
-    
+
     return category_sample_mean, precision
 
 
@@ -178,23 +153,19 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
     
     maha_scores = []
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         data.requires_grad = True 
         
-        out_features = classifier.intermediate_forward(data, layer_index)
-        out_features = out_features.view(out_features.size(0), out_features.size(1), -1)
-        out_features = torch.mean(out_features, 2)
+        hidden_feature = classifier.hidden_feature(data, layer_index)
+        hidden_feature = hidden_feature.view(hidden_feature.size(0), hidden_feature.size(1), -1)
+        hidden_feature = torch.mean(hidden_feature, 2)
         
         # compute maha score
         gaussian_score = 0
         for i in range(num_classes):
             category_sample_mean = sample_mean[layer_index][i]
-            zero_f = out_features.data - category_sample_mean
+            zero_f = hidden_feature.data - category_sample_mean
             term_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
             if i == 0:
                 gaussian_score = term_gau.view(-1, 1)
@@ -205,7 +176,7 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         sample_pred = gaussian_score.max(1)[1]
         category_sample_mean = sample_mean[layer_index].index_select(0, sample_pred)
         
-        zero_f = out_features - category_sample_mean
+        zero_f = hidden_feature - category_sample_mean
         pure_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
         loss = torch.mean(-pure_gau)
         loss.backward()
@@ -219,7 +190,7 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         
         tmpInputs = torch.add(data.data, -magnitude, gradient)
         with torch.no_grad():
-            noise_out_features = classifier.intermediate_forward(tmpInputs, layer_index)
+            noise_out_features = classifier.hidden_feature(tmpInputs, layer_index)
         noise_out_features = noise_out_features.view(noise_out_features.size(0), noise_out_features.size(1), -1)
         noise_out_features = torch.mean(noise_out_features, 2)
         noise_gaussian_score = 0
@@ -235,6 +206,9 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         noise_gaussian_score, _ = torch.max(noise_gaussian_score, dim=1)
         maha_scores.extend(noise_gaussian_score.tolist())
         
+        gaussian_score, _ = torch.max(gaussian_score, dim=1)
+        maha_scores.extend(gaussian_score.tolist())
+        
     return maha_scores
 
 
@@ -242,13 +216,9 @@ def get_energy_scores(classifier, data_loader, temperature=1.0):
     classifier.eval()
     
     energy_scores = []
-         
+
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         with torch.no_grad():
             logit = classifier(data)
@@ -324,16 +294,14 @@ def main(args):
     if args.scores == 'odin':
         id_scores = get_scores(classifier, id_loader, args.temperature, args.magnitude)
     elif args.scores == 'maha':
-        num_output = 1
-        feature_list = np.empty(num_output)
-        feature_list[0] = 128  # 64 * widen_factor
+        num_layers = 1
+        feature_dim_list = np.empty(num_layers)
+        feature_dim_list[0] = 128  # 64 * widen_factor
     
-        sample_mean, precision = sample_estimator(classifier, id_loader, num_classes, feature_list)
-        
-        id_scores = get_maha_scores(classifier, id_loader, num_classes, sample_mean, precision, num_output - 1, args.magnitude)
+        sample_mean, precision = sample_estimator(classifier, id_loader, num_classes, feature_dim_list)
+        id_scores = get_maha_scores(classifier, id_loader, num_classes, sample_mean, precision, num_layers-1, args.magnitude)
     else:
         id_scores = get_scores(classifier, id_loader)
-    
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
