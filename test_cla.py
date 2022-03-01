@@ -38,7 +38,6 @@ def main(args):
         cla_acc = cla_params['cla_acc']
         classifier.load_state_dict(cla_params['state_dict'])
         print('>>> load classifier from {} (classifiication acc {:.4f}%)'.format(str(classifier_path), cla_acc))
-        # classifier.load_state_dict(torch.load(str(classifier_path)))
     else:
         raise RuntimeError('<--- invlaid classifier path: {}'.format(str(classifier_path)))
     
@@ -58,17 +57,6 @@ def main(args):
     
     print('[train set cla acc: {:.4f}% | test set cla acc: {:.4f}%]'.format(test_train_cla_acc, test_test_cla_acc))
 
-    # save in standard format
-    # standard_state = {
-    #     'epoch': 100,
-    #     'arch': 'wide_resnet',
-    #     'state_dict': classifier.state_dict(),
-    #     'cla_acc': test_test_cla_acc
-    # }
-    
-    # standard_path =  '/home/iip/AEA/snapshots/e-p.pth'
-    # torch.save(standard_state, str(standard_path))
-    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='id dataset classification evaluation')
@@ -77,7 +65,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--classifier', type=str, default='wide_resnet')
-    parser.add_argument('--classifier_path', type=str, default='./snapshots/p.pth')
+    parser.add_argument('--classifier_path', type=str, default='./snapshots/cifar10/wrn.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
     
     args = parser.parse_args()

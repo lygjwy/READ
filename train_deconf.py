@@ -151,7 +151,7 @@ if __name__ == '__main__':
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
     parser.add_argument('--h', type=str, default='inner')  # inner, euclidean, cosine
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet')
+    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet_inner')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)
@@ -160,6 +160,5 @@ if __name__ == '__main__':
     parser.add_argument('--prefetch', type=int, default=4, help='number of dataloader workers')
     parser.add_argument('--gpu_idx', help='used gpu idx', type=int, default=0)
     args = parser.parse_args()
+    
     main(args)
-    
-    
