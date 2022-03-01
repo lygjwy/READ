@@ -27,8 +27,8 @@ class DeconfTrainer():
         total_loss = 0.0
         
         for sample in self.train_loader:
-            data, target = sample
-            data, target = data.cuda(), target.cuda()
+            data = sample['data'].cuda()
+            target = sample['label'].cuda()
             
             logit, _, _ = self.deconf_net(data)
             loss = F.cross_entropy(logit, target)
@@ -50,11 +50,11 @@ class DeconfTrainer():
         self.h_scheduler.step()
         self.scheduler.step()
         
-        # average on batch
-        print('[cla loss: {:.4f} | cla acc: {:.4f}%]'.format(total_loss / len(self.train_loader), 100. * correct / total))
+        # average on dataset
+        print('[cla loss: {:.8f} | cla acc: {:.4f}%]'.format(total_loss / len(self.train_loader.dataset), 100. * correct / total))
         metrics = {
-            'train_cla_loss': total_loss / len(self.train_loader),
-            'train_cla_acc': correct / total
+            'cla_loss': total_loss / len(self.train_loader.dataset),
+            'cla_acc': correct / total
         }
         
         return metrics

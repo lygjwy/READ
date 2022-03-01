@@ -44,11 +44,7 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
     godin_scores = []
     
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         data.requires_grad = True
         logits, h, g = deconf_net(data)

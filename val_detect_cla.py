@@ -8,7 +8,6 @@ import sklearn.covariance
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
 
@@ -28,11 +27,7 @@ def get_odin_scores(classifier, data_loader, temperature, magnitude):
     odin_scores = []
     
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         data.requires_grad = True
         logit = classifier(data)
@@ -142,15 +137,11 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
     
     maha_scores = []
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         data.requires_grad = True 
         
-        out_features = classifier.intermediate_forward(data, layer_index)
+        out_features = classifier.hidden_feature(data, layer_index)
         out_features = out_features.view(out_features.size(0), out_features.size(1), -1)
         out_features = torch.mean(out_features, 2)
         
@@ -289,7 +280,7 @@ def main(args):
     
     if classifier_path.exists():
         cla_params = torch.load(str(classifier_path))
-        cla_acc = cla_params['cla_acc']
+        # cla_acc = cla_params['cla_acc']
         classifier.load_state_dict(cla_params['state_dict'])
         # print('>>> load classifier from {} (classify acc {:.4f}%)'.format(str(classifier_path), cla_acc))
     else:

@@ -1,5 +1,4 @@
 from .resnet import get_resnet18
-from .res_rot import get_resnet_rot
 from .res_ae import get_res_ae
 from .wide_resnet import get_wrn
 from .deconf_net import get_h, DeconfNet
@@ -45,12 +44,3 @@ def get_deconf_net(fe_name, h_name, num_classes):
     h = get_h(h_name, in_features, num_classes)
     
     return DeconfNet(feature_extractor, h)
-
-
-def get_classifier_rot(name, num_classes):
-    if name == 'resnet_rot':
-        classifier = get_resnet_rot('resnet18', num_classes)
-    else:
-        raise RuntimeError('<--- invalid model arch: {}'.format(name))
-
-    return classifier

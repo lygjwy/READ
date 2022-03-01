@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 
 
-# classify
 class ClassifierTrainer():
     
     def __init__(
@@ -26,8 +25,9 @@ class ClassifierTrainer():
         total_loss = 0.0
         
         for sample in self.train_loader:
-            data, target = sample
-            data, target = data.cuda(), target.cuda()
+            data = sample['data'].cuda()
+            target = sample['label'].cuda()
+            
             logit = self.classifier(data)
             
             loss = F.cross_entropy(logit, target)
@@ -44,10 +44,10 @@ class ClassifierTrainer():
                 correct += pred.eq(target).sum().item()
         
         # average on batch
-        print('[cla loss: {:.4f} | cla acc: {:.4f}%]'.format(total_loss / len(self.train_loader), 100. * correct / total))
+        print('[cla loss: {:.8f} | cla acc: {:.4f}%]'.format(total_loss / len(self.train_loader.dataset), 100. * correct / total))
         metrics = {
-            'train_cla_loss': total_loss / len(self.train_loader),
-            'train_cla_acc': correct / total
+            'cla_loss': total_loss / len(self.train_loader.dataset),
+            'cla_acc': 100. * correct / total
         }
         
         return metrics

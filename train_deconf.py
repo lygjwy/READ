@@ -1,4 +1,3 @@
-import os
 import time
 import copy
 from pathlib import Path
@@ -29,7 +28,7 @@ def main(args):
     init_seeds(args.seed)
     
     # store net and console log by training method
-    exp_path = Path(args.output_dir) / args.output_sub_dir
+    exp_path = Path(args.output_dir) / args.dataset / args.output_sub_dir
     print('>>> Exp dir: {} '.format(str(exp_path)))
     exp_path.mkdir(parents=True, exist_ok=True)
 

@@ -117,7 +117,7 @@ def get_ae_ood_transforms(ood, stage):
         }
     else:
         raise Exception('---> Dataset Stage: {} invalid'.format(stage))
-    
+
     return transforms.Compose(ood_transforms[ood])
 
 

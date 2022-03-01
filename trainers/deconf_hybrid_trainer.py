@@ -23,21 +23,21 @@ class DeconfHybridTrainer():
     def train_epoch(self):
         self.deconf_net.train()
         
-        total, ori_correct, rec_correct = 0, 0, 0
+        total, correct, rec_correct = 0, 0, 0
         total_loss = 0.0
         
         for sample in self.train_loader:
-            assert len(sample) == 3
-            ori_data, rec_data, target = sample
-            ori_data, rec_data, target = ori_data.cuda(), rec_data.cuda(), target.cuda()
+            data = sample['data'].cuda()
+            rec_data = sample['rec_data'].cuda()
+            target = sample['label'].cuda()
             
-            ori_feature = self.deconf_net.feature_extractor(ori_data)
+            feature = self.deconf_net.feature_extractor(data)
             rec_feature = self.deconf_net.feature_extractor(rec_data)
             
             if self.deconf_net.h.name == 'cosine':
-                diff = (-torch.cosine_similarity(ori_feature, rec_feature, dim=1) + 1.0) / 2  # rescale to [0, 1]
+                diff = (-torch.cosine_similarity(feature, rec_feature, dim=1) + 1.0) / 2  # rescale to [0, 1]
             elif self.deconf_net.h.name == 'euclidean':
-                diff = ((ori_feature - rec_feature).pow(2)).mean(1)
+                diff = ((feature - rec_feature).pow(2)).mean(1)
             elif self.deconf_net.h.name == 'inner':
                 # intractable
                 # diff = -torch.bmm(ori_feature.view(target.size(0), 1, -1), rec_feature.view(target.size(0), -1, 1))
@@ -48,8 +48,8 @@ class DeconfHybridTrainer():
             else:
                 raise RuntimeError('<--- invalid h: '.format(self.deconf_net.h.name))
         
-            h, g = self.deconf_net.h(ori_feature), self.deconf_net.g(ori_feature)
-            ori_logit = h / g
+            h, g = self.deconf_net.h(feature), self.deconf_net.g(feature)
+            logit = h / g
             
             rec_h, rec_g = self.deconf_net.h(rec_feature), self.deconf_net.g(rec_feature)
             rec_logit = rec_h / rec_g
@@ -61,7 +61,7 @@ class DeconfHybridTrainer():
             # loss = 0.5 * F.cross_entropy(ori_logit, target) + 0.5 * F.cross_entropy(rec_logit, target)
             
             # loss-2: ori_ce_loss + mean_feature_diff_loss
-            loss = F.cross_entropy(ori_logit, target) + diff.mean(0)
+            loss = F.cross_entropy(logit, target) + diff.mean(0)
             
             # backward
             self.optimizer.zero_grad()
@@ -72,33 +72,33 @@ class DeconfHybridTrainer():
             self.optimizer.step()
             self.h_optimizer.step()
             
-            _, ori_pred = ori_logit.max(dim=1)
+            _, pred = logit.max(dim=1)
             _, rec_pred = rec_logit.max(dim=1)
             
             with torch.no_grad():
                 total_loss += loss.item()
                 # print(loss.item())
                 total += target.size(0)
-                ori_correct += ori_pred.eq(target).sum().item()
+                correct += pred.eq(target).sum().item()
                 rec_correct += rec_pred.eq(target).sum().item() 
         
         self.h_scheduler.step()
         self.scheduler.step()
         
        # average on dataset
-        print("[cla loss: {:.4f} | ori cla acc: {:.4f}% | rec cla acc: {:.4f}% | hybrid cla acc: {:.4f}%]".format(
+        print("[cla loss: {:.8f} | cla acc: {:.4f}% | rec cla acc: {:.4f}% | hybrid cla acc: {:.4f}%]".format(
             total_loss / len(self.train_loader.dataset),
-            100. * ori_correct / total,
+            100. * correct / total,
             100. * rec_correct / total,
-            100. * (ori_correct + rec_correct) / (2 * total)
+            100. * (correct + rec_correct) / (2 * total)
             )
         )
         
         metrics = {
-            'train_loss': total_loss / len(self.train_loader.dataset),
-            'ori_train_accuracy': ori_correct / total,
-            'rec_train_accuracy': rec_correct / total,
-            'hybrid_train_accuracy': (ori_correct + rec_correct) / (2 * total) 
+            'cla_loss': total_loss / len(self.train_loader.dataset),
+            'cla_acc': correct / total,
+            'rec_cla_acc': rec_correct / total,
+            'hybrid_cla_acc': (correct + rec_correct) / (2 * total) 
         }
-        
+
         return metrics

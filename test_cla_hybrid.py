@@ -3,7 +3,6 @@ import argparse
 from functools import partial
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
@@ -23,16 +22,16 @@ class Normalize(object):
         return tensor
 
 
-def eval_or_classification(ae, classifier, data_loader, normalize):
+def eval_hybrid_classification(ae, classifier, data_loader, normalize):
     ae.eval()
     classifier.eval()
     
     total, ori_correct, rec_correct = 0, 0, 0
     
     for sample in data_loader:
-        assert len(sample) == 2
-        data, target = sample
-        data, target = data.cuda(), target.cuda()
+        data = sample['data'].cuda()
+        target = sample['label'].cuda()
+        
         with torch.no_grad():
             rec_data = ae(data)
         
@@ -49,7 +48,7 @@ def eval_or_classification(ae, classifier, data_loader, normalize):
             rec_correct += rec_pred.eq(target).sum().item()
         
     metrics = {
-        'ori_cla_acc': 100. * ori_correct / total,
+        'cla_acc': 100. * ori_correct / total,
         'rec_cla_acc': 100. * rec_correct / total
     }
     
@@ -63,7 +62,7 @@ def main(args):
     
     means, stds = get_dataset_info(args.dataset, 'mean_and_std')
     normalize = Normalize(means, stds)
-    print('>>> Reconstruction Dataset: {} with {} data mode'.format(args.dataset, args.data_mode))
+    print('>>> Reconstruction Dataset: {}'.format(args.dataset))
     get_dataloader_default = partial(
         get_dataloader,
         root=args.data_dir,
@@ -111,8 +110,8 @@ def main(args):
     classifier.eval()
     
     # -------------------- inference -------------------- #
-    test_train_rec_cla_acc = eval_or_classification(ae, classifier, test_loader_train, normalize)['rec_cla_acc']
-    test_test_rec_cla_acc = eval_or_classification(ae, classifier, test_loader_test, normalize)['rec_cla_acc']
+    test_train_rec_cla_acc = eval_hybrid_classification(ae, classifier, test_loader_train, normalize)['rec_cla_acc']
+    test_test_rec_cla_acc = eval_hybrid_classification(ae, classifier, test_loader_test, normalize)['rec_cla_acc']
     
     print('[train set rec cla acc: {:.4f}% | test set rec cla acc: {:.4f}%]'.format(test_train_rec_cla_acc, test_test_rec_cla_acc))
     
@@ -125,11 +124,10 @@ if __name__ == '__main__':
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--ae', type=str, default='res_ae')
     parser.add_argument('--ae_path', type=str, default='./snapshots/res_ae/rec_best.pth')
-    parser.add_argument('--classifier', type=str, default='resnet18')
-    parser.add_argument('--classifier_path', type=str, default='./outputs/resnet18/r.pth')
+    parser.add_argument('--classifier', type=str, default='wide_resnet')
+    parser.add_argument('--classifier_path', type=str, default='./outputs/wide_resnet/p.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
     
     args = parser.parse_args()
     
     main(args)
-    

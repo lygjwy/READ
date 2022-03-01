@@ -72,7 +72,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='id dataset classification evaluation')
-    parser.add_argument('--data_dir', type=str, default='./datasets')
+    parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--prefetch', type=int, default=4)

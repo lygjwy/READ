@@ -253,10 +253,10 @@ def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_m
     # change complexities
     diff_coefficients = []
     for complexity in complexities:
-        if complexity <= 0.65 or complexity >= 0.85:
+        if complexity <= 0.55 or complexity >= 0.95:
             diff_coefficients.append(100.0)
         else:
-            diff_coefficients.append(1.0)
+            diff_coefficients.append(0.25)
     
     simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
      # combine
@@ -281,7 +281,7 @@ scores_dic = {
 
 def draw_hist(data, colors, labels, title, fig_path):
     plt.clf()
-    plt.hist(data, density=True, histtype='bar', color=colors, label=labels)
+    plt.hist(data, bins=100, density=True, histtype='bar', color=colors, label=labels)
     plt.xlabel('score')
     plt.ylabel('density')
     plt.legend(prop={'size': 10})

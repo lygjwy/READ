@@ -30,14 +30,10 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
     ae.eval()
     deconf_net.eval()
     
-    ori_scores, rec_scores, similarity_scores, hybrid_scores = [], [], [], []
+    scores, rec_scores, similarity_scores, hybrid_scores = [], [], [], []
     
     for sample in data_loader:
-        if data_loader.dataset.labeled:
-            data, _ = sample
-        else:
-            data = sample
-        data = data.cuda()
+        data = sample['data'].cuda()
         
         with torch.no_grad():
             rec_data = ae(data)
@@ -50,8 +46,8 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
             rec_penultimate_feature = deconf_net.penultimate_feature(rec_data)
             rec_h = deconf_net.h(rec_penultimate_feature)
         
-        ori_score, cla_idx = torch.max(h, dim=1)
-        ori_scores.extend(ori_score.tolist())
+        score, cla_idx = torch.max(h, dim=1)
+        scores.extend(score.tolist())
         
         # the same category
         cla_idx = torch.unsqueeze(cla_idx, 0).t()  # column vector
@@ -73,8 +69,8 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
     
     # combine ori_scores & similarity_scores
     # ? how to use image complexity as weight
-    for ori_score, similarity_score in zip(ori_scores, similarity_scores):
-        hybrid_scores.append(ori_score + 0.5 * similarity_score)
+    for score, similarity_score in zip(scores, similarity_scores):
+        hybrid_scores.append(score + 0.5 * similarity_score)
     # for ori_score, rec_score in zip(ori_scores, rec_scores):
     #     hybrid_scores.append(ori_score + rec_score)
     return hybrid_scores
@@ -86,7 +82,7 @@ scores_dic = {
 
 
 def main(args):
-    output_path = Path(args.output_dir) / args.output_sub_dir
+    output_path = Path(args.output_dir) / args.id / args.output_sub_dir
     print('>>> Log dir: {}'.format(str(output_path)))
     output_path.mkdir(parents=True, exist_ok=True)
     

@@ -11,7 +11,7 @@ import torch
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-from datasets import get_transforms, get_dataset_info, get_dataloader, get_hybrid_dataloader
+from datasets import get_transforms, get_dataset_info, get_hybrid_dataloader
 from models import get_deconf_net
 from trainers import get_deconf_hybrid_trainer
 from evaluation import Evaluator
@@ -110,22 +110,22 @@ def main(args):
     begin_time = time.time()
     
     start_epoch = 1
-    ori_cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0
-    ori_cla_best_state, rec_cla_best_state, hybrid_cla_best_state, last_state = {}, {}, {}, {}
+    cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0
+    cla_best_state, rec_cla_best_state, hybrid_cla_best_state, last_state = {}, {}, {}, {}
     
     for epoch in range(start_epoch, args.epochs+1):
     
         trainer.train_epoch()
         val_metrics = evaluator.eval_deconf_hybrid_classification(test_loader)
         
-        ori_cla_best = val_metrics['ori_test_accuracy'] > ori_cla_best_acc
-        ori_cla_best_acc = max(val_metrics['ori_test_accuracy'], ori_cla_best_acc)
+        cla_best = val_metrics['cla_acc'] > cla_best_acc
+        cla_best_acc = max(val_metrics['cla_acc'], cla_best_acc)
         
-        rec_cla_best = val_metrics['rec_test_accuracy'] > rec_cla_best_acc
-        rec_cla_best_acc = max(val_metrics['rec_test_accuracy'], rec_cla_best_acc)
+        rec_cla_best = val_metrics['rec_cla_acc'] > rec_cla_best_acc
+        rec_cla_best_acc = max(val_metrics['rec_cla_acc'], rec_cla_best_acc)
         
-        hybrid_cla_best = val_metrics['hybrid_test_accuracy'] > hybrid_cla_best_acc
-        hybrid_cla_best_acc = max(val_metrics['hybrid_test_accuracy'], hybrid_cla_best_acc)
+        hybrid_cla_best = val_metrics['hybrid_cla_acc'] > hybrid_cla_best_acc
+        hybrid_cla_best_acc = max(val_metrics['hybrid_cla_acc'], hybrid_cla_best_acc)
         
         if epoch == args.epochs:
             last_state = {
@@ -133,20 +133,20 @@ def main(args):
                 'feature_extractor': args.feature_extractor,
                 'h': args.h,
                 'state_dict': deconf_net.state_dict(),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
         
-        if ori_cla_best:
-            ori_cla_best_state = {
+        if cla_best:
+            cla_best_state = {
                 'epoch': epoch,
                 'feature_extractor': args.feature_extractor,
                 'h': args.h,
                 'state_dict': copy.deepcopy(deconf_net.state_dict()),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
         
         if rec_cla_best:
@@ -155,9 +155,9 @@ def main(args):
                 'feature_extractor': args.feature_extractor,
                 'h': args.h,
                 'state_dict': copy.deepcopy(deconf_net.state_dict()),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
             
         if hybrid_cla_best:
@@ -166,9 +166,9 @@ def main(args):
                 'feature_extractor': args.feature_extractor,
                 'h': args.h,
                 'state_dict': copy.deepcopy(deconf_net.state_dict()),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
 
         
@@ -181,16 +181,16 @@ def main(args):
         )
 
     # ------------------------------------ Trainig done, save model ------------------------------------
-    ori_cla_best_path = exp_path / 'ori_cla_best.pth'
-    torch.save(ori_cla_best_state, str(ori_cla_best_path))
+    cla_best_path = exp_path / 'cla_best.pth'
+    torch.save(cla_best_state, str(cla_best_path))
     rec_cla_best_path = exp_path / 'rec_cla_best.pth'
     torch.save(rec_cla_best_state, str(rec_cla_best_path))
     hybrid_cla_best_path = exp_path / 'cla_best.pth'
     torch.save(hybrid_cla_best_state, str(hybrid_cla_best_path))
     last_path = exp_path / 'last.pth'
     torch.save(last_state, str(last_path))
-    print('---> Best ori cla acc: {:.4f}% | rec cla acc: {:.4f}% | cla acc: {:.4f}%'.format(
-        ori_cla_best_acc,
+    print('---> Best cla acc: {:.4f}% | rec cla acc: {:.4f}% | hybrid cla acc: {:.4f}%'.format(
+        cla_best_acc,
         rec_cla_best_acc,
         hybrid_cla_best_acc
         )
@@ -201,9 +201,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Deconf-net')
     parser.add_argument('--seed', default=1, type=int, help='seed for initialize training')
     parser.add_argument('--data_dir', help='directory to store datasets', default='/home/iip/datasets')
+    parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
     parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet')
-    parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
     parser.add_argument('--h', type=str, default='inner')  # inner, euclidean, cosine
     parser.add_argument('--pretrained', action='store_true', default=False)

@@ -32,7 +32,7 @@ def main(args):
     init_seeds(args.seed)
     
     # store net and console log by training method
-    exp_path = Path(args.output_dir) / args.output_sub_dir
+    exp_path = Path(args.output_dir) / args.dataset / args.output_sub_dir
     print('>>> Exp dir: {} '.format(str(exp_path)))
     exp_path.mkdir(parents=True, exist_ok=True)
 
@@ -111,40 +111,40 @@ def main(args):
     begin_time = time.time()
     
     start_epoch = 1
-    ori_cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0
-    ori_cla_best_state, rec_cla_best_state, hybrid_cla_best_state, last_state = {}, {}, {}, {}
+    cla_best_acc, rec_cla_best_acc, hybrid_cla_best_acc = 0.0, 0.0, 0.0
+    cla_best_state, rec_cla_best_state, hybrid_cla_best_state, last_state = {}, {}, {}, {}
     
     for epoch in range(start_epoch, args.epochs+1):
         trainer.train_epoch()
         val_metrics = evaluator.eval_hybrid_classification(test_loader)
         
-        ori_cla_best = val_metrics['ori_test_accuracy'] > ori_cla_best_acc
-        ori_cla_best_acc = max(val_metrics['ori_test_accuracy'], ori_cla_best_acc)
+        cla_best = val_metrics['cla_acc'] > cla_best_acc
+        cla_best_acc = max(val_metrics['cla_acc'], cla_best_acc)
         
-        rec_cla_best = val_metrics['rec_test_accuracy'] > rec_cla_best_acc
-        rec_cla_best_acc = max(val_metrics['rec_test_accuracy'], rec_cla_best_acc)
+        rec_cla_best = val_metrics['rec_cla_acc'] > rec_cla_best_acc
+        rec_cla_best_acc = max(val_metrics['rec_cla_acc'], rec_cla_best_acc)
         
-        hybrid_cla_best = val_metrics['hybrid_test_accuracy'] > hybrid_cla_best_acc
-        hybrid_cla_best_acc = max(val_metrics['hybrid_test_accuracy'], hybrid_cla_best_acc)
+        hybrid_cla_best = val_metrics['hybrid_cla_acc'] > hybrid_cla_best_acc
+        hybrid_cla_best_acc = max(val_metrics['hybrid_cla_acc'], hybrid_cla_best_acc)
         
         if epoch == args.epochs:
             last_state = {
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': classifier.state_dict(),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
 
-        if ori_cla_best:
-            ori_cla_best_state = {
+        if cla_best:
+            cla_best_state = {
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': copy.deepcopy(classifier.state_dict()),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
         
         if rec_cla_best:
@@ -152,9 +152,9 @@ def main(args):
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': copy.deepcopy(classifier.state_dict()),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
             
         if hybrid_cla_best:
@@ -162,9 +162,9 @@ def main(args):
                 'epoch': epoch,
                 'arch': args.arch,
                 'state_dict': copy.deepcopy(classifier.state_dict()),
-                'cla_acc': val_metrics['ori_test_accuracy'],
-                'rec_cla_acc': val_metrics['rec_test_accuracy'],
-                'hybrid_cla_acc': val_metrics['hybrid_test_accuracy']
+                'cla_acc': val_metrics['cla_acc'],
+                'rec_cla_acc': val_metrics['rec_cla_acc'],
+                'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
 
         print(
@@ -176,16 +176,16 @@ def main(args):
         )
 
     # ------------------------------------ Trainig done, save model ------------------------------------
-    ori_cla_best_path = exp_path / 'ori_cla_best.pth'
-    torch.save(ori_cla_best_state, str(ori_cla_best_path))
+    cla_best_path = exp_path / 'cla_best.pth'
+    torch.save(cla_best_state, str(cla_best_path))
     rec_cla_best_path = exp_path / 'rec_cla_best.pth'
     torch.save(rec_cla_best_state, str(rec_cla_best_path))
     hybrid_cla_best_path = exp_path / 'cla_best.pth'
     torch.save(hybrid_cla_best_state, str(hybrid_cla_best_path))
     last_path = exp_path / 'last.pth'
     torch.save(last_state, str(last_path))
-    print('---> Best ori cla acc: {:.4f}% | rec cla acc: {:.4f}% | cla acc: {:.4f}%'.format(
-        ori_cla_best_acc,
+    print('---> Best cla acc: {:.4f}% | rec cla acc: {:.4f}% | cla acc: {:.4f}%'.format(
+        cla_best_acc,
         rec_cla_best_acc,
         hybrid_cla_best_acc
         )
@@ -195,17 +195,17 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Classifier with hybrid images')
     parser.add_argument('--seed', default=1, type=int, help='seed for initialize training')
-    parser.add_argument('--arch', type=str, default='wide_resnet')
+    parser.add_argument('--data_dir', help='directory to store datasets', default='/home/iip/datasets')
+    parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--pretrained', action='store_true', default=False)
     parser.add_argument('--pretrain_path', type=str, default='snapshots')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
     parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='tmp')
+    parser.add_argument('--arch', type=str, default='wide_resnet')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--data_dir', help='directory to store datasets', default='data/datasets')
-    parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4, help='number of dataloader workers')
     parser.add_argument('--gpu_idx', help='used gpu idx', type=int, default=0)

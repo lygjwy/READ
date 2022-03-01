@@ -248,7 +248,7 @@ def draw_hist(data, colors, labels, title, fig_path):
 
 
 def main(args):
-    output_path = Path(args.output_dir) / args.output_sub_dir
+    output_path = Path(args.output_dir) / args.id / args.output_sub_dir
     print('>>> Log dir: {}'.format(str(output_path)))
     output_path.mkdir(parents=True, exist_ok=True)
     
