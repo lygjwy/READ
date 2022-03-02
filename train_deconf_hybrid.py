@@ -29,7 +29,7 @@ def main(args):
     init_seeds(args.seed)
     
     # store net and console log by training method
-    exp_path = Path(args.output_dir) / args.output_sub_dir
+    exp_path = Path(args.output_dir) / args.dataset / args.output_sub_dir
     print('>>> Exp dir: {} '.format(str(exp_path)))
     exp_path.mkdir(parents=True, exist_ok=True)
 
@@ -159,7 +159,7 @@ def main(args):
                 'rec_cla_acc': val_metrics['rec_cla_acc'],
                 'hybrid_cla_acc': val_metrics['hybrid_cla_acc']
             }
-            
+
         if hybrid_cla_best:
             hybrid_cla_best_state = {
                 'epoch': epoch,
@@ -203,11 +203,11 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', help='directory to store datasets', default='/home/iip/datasets')
     parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet')
+    parser.add_argument('--output_sub_dir', help='sub dir to store experiment artifacts', default='wide_resnet_euclidean-hybrid')
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
-    parser.add_argument('--h', type=str, default='inner')  # inner, euclidean, cosine
+    parser.add_argument('--h', type=str, default='euclidean')  # inner, euclidean, cosine
     parser.add_argument('--pretrained', action='store_true', default=False)
-    parser.add_argument('--pretrain_path', type=str, default='./snapshots/w-i.pth')
+    parser.add_argument('--pretrain_path', type=str, default='./snapshots/cifar10/wrn_e.pth')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--momentum', type=float, default=0.9)

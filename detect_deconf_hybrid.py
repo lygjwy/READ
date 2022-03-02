@@ -26,14 +26,17 @@ class Normalize(object):
         return tensor
     
 
-def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
+def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine', combination='hybrid'):
     ae.eval()
     deconf_net.eval()
     
-    scores, rec_scores, similarity_scores, hybrid_scores = [], [], [], []
+    complexities = []
+    scores, similarities, hybrid_scores = [], [], []
     
     for sample in data_loader:
         data = sample['data'].cuda()
+        complexity = sample['complexity']
+        complexities.extend(complexity.tolist())
         
         with torch.no_grad():
             rec_data = ae(data)
@@ -44,15 +47,15 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
             penultimate_feature = deconf_net.penultimate_feature(data)
             h = deconf_net.h(penultimate_feature)
             rec_penultimate_feature = deconf_net.penultimate_feature(rec_data)
-            rec_h = deconf_net.h(rec_penultimate_feature)
+            # rec_h = deconf_net.h(rec_penultimate_feature)
         
         score, cla_idx = torch.max(h, dim=1)
         scores.extend(score.tolist())
         
         # the same category
         cla_idx = torch.unsqueeze(cla_idx, 0).t()  # column vector
-        rec_score = torch.gather(rec_h, dim=1, index=cla_idx)
-        rec_scores.extend(torch.squeeze(rec_score).tolist())
+        # rec_score = torch.gather(rec_h, dim=1, index=cla_idx)
+        # rec_scores.extend(torch.squeeze(rec_score).tolist())
         
         # calculate the difference between penulitimate_feature & rec_penultimate_feature
         if args.h == 'cosine':
@@ -65,19 +68,53 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine'):
         else:
             raise RuntimeError('<--- invalid h: '.format(args.h))
         
-        similarity_scores.extend(similarity.tolist())
+        similarities.extend(similarity.tolist())
     
-    # combine ori_scores & similarity_scores
-    # ? how to use image complexity as weight
-    for score, similarity_score in zip(scores, similarity_scores):
-        hybrid_scores.append(score + 0.5 * similarity_score)
-    # for ori_score, rec_score in zip(ori_scores, rec_scores):
-    #     hybrid_scores.append(ori_score + rec_score)
-    return hybrid_scores
+    # change complexities
+    simi_coefficients = []
+    if args.h == 'cosine':
+        if complexity <= 0.55:
+            simi_coefficients.append(0.01)
+        elif complexity < 0.95:
+            simi_coefficients.append(0.25)
+        else:
+            simi_coefficients.append(0.01)
+    elif args.h == 'euclidean':
+        for complexity in complexities:
+            # simi_coefficients.append(0.5)
+            if complexity <= 0.55:
+                simi_coefficients.append(2.0)
+            elif complexity < 0.95:
+                simi_coefficients.append(0.5)
+            else:
+                simi_coefficients.append(2.0)
+    elif args.h == 'inner':
+        if complexity <= 0.55:
+            simi_coefficients.append(0.01)
+        elif complexity < 0.95:
+            simi_coefficients.append(0.25)
+        else:
+            simi_coefficients.append(0.01)
+    else:
+        raise RuntimeError('<--- invalid h: '.format(args.h))
+    
+    simi_scores = [similarity * simi_coefficient for similarity, simi_coefficient in zip(similarities, simi_coefficients)]
+    
+     # combine
+    if combination == 'ori':
+        return scores
+    elif combination == 'diff':
+        return simi_scores
+    elif combination == 'hybrid':
+        for score, simi_score in zip(scores, simi_scores):
+            hybrid_scores.append(score + simi_score)
+        return hybrid_scores
+    else:
+        raise RuntimeError('<--- invalid combination: {}'.format(combination))
 
 
 scores_dic = {
-    'hybrid': get_hybrid_scores
+    'hybrid_deconf': get_hybrid_scores
 }
 
 
@@ -140,13 +177,13 @@ def main(args):
     get_scores = scores_dic[args.scores]
     result_dic_list = []
     
-    id_scores = get_scores(ae, deconf_net, id_loader, normalize, h=args.h)
+    id_scores = get_scores(ae, deconf_net, id_loader, normalize, h=args.h, combination=args.combination)
     id_label = np.zeros(len(id_scores))
     
     for ood_loader in ood_loaders:
         result_dic = {'name': ood_loader.dataset.name}
         
-        ood_scores = get_scores(ae, deconf_net, ood_loader, normalize, h=args.h)
+        ood_scores = get_scores(ae, deconf_net, ood_loader, normalize, h=args.h, combination=args.combination)
         ood_label = np.ones(len(ood_scores))
         
         scores = np.concatenate([id_scores, ood_scores])
@@ -170,13 +207,14 @@ if __name__ == '__main__':
     parser.add_argument('--id', type=str, default='cifar10')
     parser.add_argument('--oods', nargs='+', default=['svhn', 'lsunc', 'dtd', 'places365_10k', 'cifar100', 'tinc', 'lsunr', 'tinr', 'isun'])
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
+    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='hybrid_deconf')
     parser.add_argument('--ae', type=str, default='res_ae')
-    parser.add_argument('--ae_path', type=str, default='./snapshots/r.pth')
+    parser.add_argument('--ae_path', type=str, default='./snapshots/cifar10/rec.pth')
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
-    parser.add_argument('--h', type=str, default='cosine')
-    parser.add_argument('--deconf_path', type=str, default='./snapshots/w-c.pth')
-    parser.add_argument('--scores', type=str, default='hybrid')
+    parser.add_argument('--h', type=str, default='euclidean')
+    parser.add_argument('--deconf_path', type=str, default='./snapshots/cifar10/wrn_e.pth')
+    parser.add_argument('--scores', type=str, default='hybrid_deconf')
+    parser.add_argument('--combination', type=str, default='hybrid')  # ori, diff, hybrid 
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--gpu_idx', type=int, default=0)

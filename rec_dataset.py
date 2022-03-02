@@ -38,7 +38,7 @@ def main(args):
         ae_params = torch.load(str(ae_path))
         rec_err = ae_params['rec_err']
         ae.load_state_dict(ae_params['state_dict'])
-        print('>>> load best ae from {} (rec err {:.4f})'.format(str(ae_path), rec_err))
+        print('>>> load ae from {} (rec err {:.4f})'.format(str(ae_path), rec_err))
     else:
         print('---> invalid ae path: {}'.format(str(ae_path)))
     
@@ -55,9 +55,10 @@ def main(args):
     
     with torch.no_grad():
         for sample in data_loader:
-            data, target = sample
+            data = sample['data'].cuda()
+            target = sample['label']
             target_list.extend(target.tolist())
-            data = data.cuda()
+
             rec_data = ae(data)
             
             rec_loss = F.mse_loss(rec_data, data, reduction='sum')
@@ -86,7 +87,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--arch', type=str, default='res_ae')
-    parser.add_argument('--ae_path', type=str, default='./snapshots/r.pth')
+    parser.add_argument('--ae_path', type=str, default='./snapshots/cifar10/rec.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
     
     args = parser.parse_args()

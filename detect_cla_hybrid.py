@@ -33,7 +33,7 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
     classifier.eval()
     
     complexities = []
-    ori_scores, similarities, hybrid_scores = [], [], [], []
+    scores, similarities, hybrid_scores = [], [], []
     
     for sample in data_loader:
         data = sample['data'].cuda()
@@ -49,8 +49,8 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
             penultimate_feature = classifier.penultimate_feature(data)
             rec_penultimate_feature = classifier.penultimate_feature(rec_data)
             
-            ori_score, _ = torch.max(classifier.fc(penultimate_feature), dim=1)
-            ori_scores.extend(ori_score.tolist())
+            score, _ = torch.max(classifier.fc(penultimate_feature), dim=1)
+            scores.extend(score.tolist())
             
             # calculate the ori & rec similarity
             similarity = torch.bmm(penultimate_feature.view(args.batch_size, 1, -1), rec_penultimate_feature.view(args.batch_size, -1, 1))
@@ -62,20 +62,22 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
     # change complexities
     simi_coefficients = []
     for complexity in complexities:
-        if complexity <= 0.65 or complexity >= 0.85:
+        if complexity <= 0.55:
             simi_coefficients.append(0.01)
+        elif complexity < 0.95:
+            simi_coefficients.append(0.1)
         else:
-            simi_coefficients.append(1.0)
+            simi_coefficients.append(0.01)
     
     simi_scores = [similarity * simi_coefficient for similarity, simi_coefficient in zip(similarities, simi_coefficients)]
     # combine
     if combination == 'ori':
-        return ori_scores
+        return scores
     elif combination == 'diff':
         return simi_scores
     elif combination == 'hybrid':
-        for ori_score, simi_score in zip(ori_scores, simi_scores):
-            hybrid_scores.append(ori_score + simi_score)
+        for score, simi_score in zip(scores, simi_scores):
+            hybrid_scores.append(score + simi_score)
         return hybrid_scores
     else:
         raise RuntimeError('<--- invalid combination: {}'.format(combination))
@@ -87,7 +89,7 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
     classifier.eval()
     
     complexities = []
-    ori_scores, differents, hybrid_scores = [], [], [], []
+    scores, differents, hybrid_scores = [], [], []
     
     for sample in data_loader:
         data = sample['data'].cuda()
@@ -100,31 +102,33 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
             data = torch.stack([normalize(img) for img in data], dim=0)
             rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
             
-            ori_logit = classifier(data)
+            logit = classifier(data)
             rec_logit = classifier(rec_data)
-            ori_softmax = torch.softmax(ori_logit, dim=1)
+            softmax = torch.softmax(logit, dim=1)
             rec_softmax = torch.softmax(rec_logit, dim=1)
             
-            uniform_dist = torch.ones_like(ori_softmax) * (1 / ori_softmax.shape[1])
-            ori_scores.extend(torch.sum(F.kl_div(ori_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
-            differents.extend(torch.sum(F.kl_div(rec_softmax.log(), ori_softmax, reduction='none'), dim=1).tolist())
+            uniform_dist = torch.ones_like(softmax) * (1 / softmax.shape[1])
+            scores.extend(torch.sum(F.kl_div(softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
+            differents.extend(torch.sum(F.kl_div(rec_softmax.log(), softmax, reduction='none'), dim=1).tolist())
 
     # change complexities
     diff_coefficients = []
     for complexity in complexities:
-        if complexity <= 0.65 or complexity >= 0.85:
+        if complexity <= 0.55:
             diff_coefficients.append(100.0)
+        elif complexity < 0.95:
+            diff_coefficients.append(0.25)
         else:
-            diff_coefficients.append(1.0)
+            diff_coefficients.append(100.0)
     
     simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
     # combine
     if combination == 'ori':
-        return ori_scores
+        return scores
     elif combination == 'diff':
         return simi_scores
     elif combination == 'hybrid':
-        for ori_score, simi_score in zip(ori_scores, simi_scores):
+        for ori_score, simi_score in zip(scores, simi_scores):
             hybrid_scores.append(ori_score + simi_score)
         return hybrid_scores
     else:
@@ -199,7 +203,7 @@ def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_m
     classifier.eval()
 
     complexities = []
-    ori_scores, differents, hybrid_scores = [], [], []
+    scores, differents, hybrid_scores = [], [], []
     
     for sample in data_loader:
         data = sample['data'].cuda()
@@ -247,25 +251,27 @@ def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_m
             
             uniform_dist = torch.ones_like(ori_maha_softmax) * (1. / num_classes)
             # get gaussian score [batch_size, num_classes]
-            ori_scores.extend(torch.sum(F.kl_div(ori_maha_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
+            scores.extend(torch.sum(F.kl_div(ori_maha_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
             differents.extend(torch.sum(F.kl_div(rec_maha_softmax.log(), ori_maha_softmax, reduction='none'), dim=1).tolist())
     
     # change complexities
     diff_coefficients = []
     for complexity in complexities:
-        if complexity <= 0.55 or complexity >= 0.95:
+        if complexity <= 0.55:
             diff_coefficients.append(100.0)
-        else:
+        elif complexity < 0.95:
             diff_coefficients.append(0.25)
+        else:
+            diff_coefficients.append(100.0)
     
     simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
      # combine
     if combination == 'ori':
-        return ori_scores
+        return scores
     elif combination == 'diff':
         return simi_scores
     elif combination == 'hybrid':
-        for ori_score, simi_score in zip(ori_scores, simi_scores):
+        for ori_score, simi_score in zip(scores, simi_scores):
             hybrid_scores.append(ori_score + simi_score)
         return hybrid_scores
     else:
@@ -290,7 +296,7 @@ def draw_hist(data, colors, labels, title, fig_path):
 
 
 def main(args):
-    output_path = Path(args.output_dir) / args.output_sub_dir
+    output_path = Path(args.output_dir) / args.id / args.output_sub_dir
     print('>>> Log dir: {}'.format(str(output_path)))
     output_path.mkdir(parents=True, exist_ok=True)
     
@@ -383,7 +389,7 @@ def main(args):
         title = '-'.join([ood_loader.dataset.name, args.id, args.scores])
         fig_path = output_path / (title + '.png')
         draw_hist(hist_scores, colors, labels, title, fig_path)
-        
+
     #  save result
     result = pd.DataFrame(result_dic_list)
     log_path = output_path / (args.scores + '.csv')
@@ -394,14 +400,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Detect OOD using ori_score - coefficient * diff')
     parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
+    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='hybrid_cla')
     parser.add_argument('--id', type=str, default='cifar10')
     parser.add_argument('--oods', nargs='+', default=['svhn', 'lsunc', 'dtd', 'places365_10k', 'cifar100', 'tinc', 'lsunr', 'tinr', 'isun'])
     parser.add_argument('--ae', type=str, default='res_ae')
-    parser.add_argument('--ae_path', type=str, default='./snapshots/r.pth')
+    parser.add_argument('--ae_path', type=str, default='./snapshots/cifar10/rec.pth')
     parser.add_argument('--classifier', type=str, default='wide_resnet')
-    parser.add_argument('--classifier_path', type=str, default='./snapshots/p.pth')
-    parser.add_argument('--scores', type=str, default='hybrid_inner')
+    parser.add_argument('--classifier_path', type=str, default='./snapshots/cifar10/wrn.pth')
+    parser.add_argument('--scores', type=str, default='hybrid_maha_kl')
     parser.add_argument('--combination', type=str, default='hybrid')  # ori, diff, hybrid 
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)

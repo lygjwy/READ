@@ -123,9 +123,9 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--ae', type=str, default='res_ae')
-    parser.add_argument('--ae_path', type=str, default='./snapshots/res_ae/rec_best.pth')
+    parser.add_argument('--ae_path', type=str, default='./snapshots/cifar10/rec.pth')
     parser.add_argument('--classifier', type=str, default='wide_resnet')
-    parser.add_argument('--classifier_path', type=str, default='./outputs/wide_resnet/p.pth')
+    parser.add_argument('--classifier_path', type=str, default='./snapshots/cifar10/wrn.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
     
     args = parser.parse_args()

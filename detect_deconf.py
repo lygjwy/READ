@@ -13,7 +13,7 @@ from models import get_deconf_net
 from evaluation import compute_all_metrics
 
 
-def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
+def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h', std=(0.2470, 0.2435, 0.2616)):
     deconf_net.eval()
     
     godin_scores = []
@@ -37,9 +37,9 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
         gradient = torch.ge(data.grad.detach(), 0)
         gradient = (gradient.float() - 0.5) * 2
         
-        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
-        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
-        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
+        gradient[:, 0] = gradient[:, 0] / std[0]
+        gradient[:, 1] = gradient[:, 1] / std[1]
+        gradient[:, 2] = gradient[:, 2] / std[2]
         
         tmpInputs = torch.add(data.detach(), magnitude, gradient)
         
@@ -77,6 +77,7 @@ def main(args):
     print('>>> Log dir: {}'.format(str(output_path)))
     output_path.mkdir(parents=True, exist_ok=True)
     
+    _, std = get_dataset_info(args.id, 'mean_and_std')
     test_transform = get_transforms(args.id, stage='test')
     
     get_dataloader_default = partial(
@@ -118,7 +119,7 @@ def main(args):
     result_dic_list = []
     
     if args.scores == 'godin':
-        id_scores = get_scores(deconf_net, id_loader, args.magnitude, args.score_func)
+        id_scores = get_scores(deconf_net, id_loader, args.magnitude, args.score_func, std)
     else:
         id_scores = get_scores(deconf_net, id_loader)
     
@@ -128,7 +129,7 @@ def main(args):
         result_dic = {'name': ood_loader.dataset.name}
         
         if args.scores == 'godin':
-            ood_scores = get_scores(deconf_net, ood_loader, args.magnitude, args.score_func)
+            ood_scores = get_scores(deconf_net, ood_loader, args.magnitude, args.score_func, std)
         else:
             ood_scores = get_scores(deconf_net, ood_loader)
         
@@ -161,10 +162,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='detect ood')
     parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
+    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='godin_i')
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
-    parser.add_argument('--h', type=str, default='cosine')
-    parser.add_argument('--deconf_path', type=str, default='./snapshots/w-c.pth')
+    parser.add_argument('--h', type=str, default='inner')
+    parser.add_argument('--deconf_path', type=str, default='./snapshots/cifar10/wrn_i.pth')
     parser.add_argument('--id', type=str, default='cifar10')
     parser.add_argument('--oods', nargs='+', default=['svhn', 'lsunc', 'dtd', 'places365_10k', 'cifar100', 'tinc', 'lsunr', 'tinr', 'isun'])
     parser.add_argument('--scores', type=str, default='godin')
