@@ -50,7 +50,7 @@ def get_kl_scores(classifier, data_loader):
     return kl_scores
 
 
-def get_odin_scores(classifier, data_loader, temperature=1000.0, magnitude=0.0014):
+def get_odin_scores(classifier, data_loader, temperature=1000.0, magnitude=0.0014, std=(0.2470, 0.2435, 0.2616)):
     classifier.eval()
     
     odin_scores = []
@@ -70,9 +70,9 @@ def get_odin_scores(classifier, data_loader, temperature=1000.0, magnitude=0.001
         gradient = torch.ge(data.grad.detach(), 0)
         gradient = (gradient.float() - 0.5) * 2
         
-        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
-        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
-        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
+        gradient[:, 0] = gradient[:, 0] / std[0]
+        gradient[:, 1] = gradient[:, 1] / std[1]
+        gradient[:, 2] = gradient[:, 2] / std[2]
         
         tmpInputs = torch.add(data.detach(), -magnitude, gradient)
         logit = classifier(tmpInputs)
@@ -148,7 +148,7 @@ def sample_estimator(classifier, data_loader, num_classes, feature_dim_list):
     return category_sample_mean, precision
 
 
-def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision, layer_index, magnitude):
+def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision, layer_index, magnitude, std):
     classifier.eval()
     
     maha_scores = []
@@ -184,9 +184,9 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         gradient = torch.ge(data.grad.data, 0)
         gradient = (gradient.float() - 0.5) * 2
         
-        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
-        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
-        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
+        gradient[:, 0] = gradient[:, 0] / std[0]
+        gradient[:, 1] = gradient[:, 1] / std[1]
+        gradient[:, 2] = gradient[:, 2] / std[2]
         
         tmpInputs = torch.add(data.data, -magnitude, gradient)
         with torch.no_grad():
@@ -252,6 +252,7 @@ def main(args):
     print('>>> Log dir: {}'.format(str(output_path)))
     output_path.mkdir(parents=True, exist_ok=True)
     
+    _, std = get_dataset_info(args.id, 'mean_and_std')
     test_transform = get_transforms(args.id, stage='test')
     
     get_dataloader_default = partial(
@@ -292,14 +293,14 @@ def main(args):
     result_dic_list = []
     
     if args.scores == 'odin':
-        id_scores = get_scores(classifier, id_loader, args.temperature, args.magnitude)
+        id_scores = get_scores(classifier, id_loader, args.temperature, args.magnitude, std)
     elif args.scores == 'maha':
         num_layers = 1
         feature_dim_list = np.empty(num_layers)
         feature_dim_list[0] = 128  # 64 * widen_factor
     
         sample_mean, precision = sample_estimator(classifier, id_loader, num_classes, feature_dim_list)
-        id_scores = get_maha_scores(classifier, id_loader, num_classes, sample_mean, precision, num_layers-1, args.magnitude)
+        id_scores = get_maha_scores(classifier, id_loader, num_classes, sample_mean, precision, num_layers-1, args.magnitude, std)
     else:
         id_scores = get_scores(classifier, id_loader)
     id_label = np.zeros(len(id_scores))
@@ -308,9 +309,9 @@ def main(args):
         result_dic = {'name': ood_loader.dataset.name}
         
         if args.scores == 'odin':
-            ood_scores = get_scores(classifier, ood_loader, args.temperature, args.magnitude)
+            ood_scores = get_scores(classifier, ood_loader, args.temperature, args.magnitude, std)
         elif args.scores == 'maha':
-            ood_scores = get_maha_scores(classifier, ood_loader, num_classes, sample_mean, precision, 0, args.magnitude)
+            ood_scores = get_maha_scores(classifier, ood_loader, num_classes, sample_mean, precision, 0, args.magnitude, std)
         else:
             ood_scores = get_scores(classifier, ood_loader)
         ood_label = np.ones(len(ood_scores))
@@ -344,14 +345,14 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
     parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
     parser.add_argument('--id', type=str, default='cifar10')
-    parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365_10k', 'isun'])
+    parser.add_argument('--oods', nargs='+', default=['svhn', 'lsunc', 'dtd', 'places365_10k', 'cifar100', 'tinc', 'lsunr', 'tinr', 'isun'])
     parser.add_argument('--scores', type=str, default='msp')
     parser.add_argument('--temperature', type=int, default=1000)
     parser.add_argument('--magnitude', type=float, default=0.0014)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--classifier', type=str, default='wide_resnet')
-    parser.add_argument('--classifier_path', type=str, default='./snapshots/p.pth')
+    parser.add_argument('--classifier_path', type=str, default='./snapshots/cifar10/wrn.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
 
     args = parser.parse_args()

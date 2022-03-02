@@ -242,8 +242,8 @@ class AvgOfPair(Dataset):
         random_idx = np.random.choice(len(self.dataset))
         while random_idx == i:
             random_idx = np.random.choice(len(self.dataset))
-            
-        return self.dataset[i][0] / 2. + self.dataset[random_idx][0] / 2.
+        
+        return self.dataset[i]['data'] / 2. + self.dataset[random_idx]['data'] / 2.
     
     def __len__(self):
         return len(self.dataset)
@@ -262,8 +262,7 @@ class GeoMeanOfPair(Dataset):
         while random_idx == i:
             random_idx = np.random.choice(len(self.dataset))
         
-        return transforms.Normalize(self.mean, self.std)(torch.sqrt(self.dataset[i][0] * self.dataset[random_idx][0]))
+        return transforms.Normalize(self.mean, self.std)(torch.sqrt(self.dataset[i]['data'] * self.dataset[random_idx]['data']))
     
     def __len__(self):
         return len(self.dataset)
-    

@@ -166,7 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--h', type=str, default='cosine')
     parser.add_argument('--deconf_path', type=str, default='./snapshots/w-c.pth')
     parser.add_argument('--id', type=str, default='cifar10')
-    parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365_10k', 'isun'])
+    parser.add_argument('--oods', nargs='+', default=['svhn', 'lsunc', 'dtd', 'places365_10k', 'cifar100', 'tinc', 'lsunr', 'tinr', 'isun'])
     parser.add_argument('--scores', type=str, default='godin')
     parser.add_argument('--magnitude', type=float, default=0.0)
     parser.add_argument('--score_func', type=str, default='h')

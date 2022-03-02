@@ -168,7 +168,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='detect ood')
     parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--id', type=str, default='cifar10')
-    parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365_10k', 'isun'])
+    parser.add_argument('--oods', nargs='+', default=['svhn', 'lsunc', 'dtd', 'places365_10k', 'cifar100', 'tinc', 'lsunr', 'tinr', 'isun'])
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
     parser.add_argument('--output_sub_dir', help='sub dir to store log', default='tmp')
     parser.add_argument('--ae', type=str, default='res_ae')

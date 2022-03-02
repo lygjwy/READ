@@ -38,13 +38,20 @@ def get_ood_val_loader(name, mean, std, get_dataloader_default):
     return ood_val_loader
 
 
-def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
+def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h', std=(0.2470, 0.2435, 0.2616)):
     deconf_net.eval()
     
     godin_scores = []
     
     for sample in data_loader:
-        data = sample['data'].cuda()
+        if isinstance(sample, dict):
+                data = sample['data']
+        else:
+            if data_loader.dataset.labeled:
+                data, _ = sample
+            else:
+                data = sample
+        data = data.cuda()
         
         data.requires_grad = True
         logits, h, g = deconf_net(data)
@@ -62,9 +69,9 @@ def get_godin_scores(deconf_net, data_loader, magnitude=0.0010, score_func='h'):
         gradient = torch.ge(data.grad.detach(), 0)
         gradient = (gradient.float() - 0.5) * 2
         
-        gradient[:, 0] = gradient[:, 0] / (63.0 / 255)
-        gradient[:, 1] = gradient[:, 1] / (62.1 / 255)
-        gradient[:, 2] = gradient[:, 2] / (66.7 / 255)
+        gradient[:, 0] = gradient[:, 0] / std[0]
+        gradient[:, 1] = gradient[:, 1] / std[1]
+        gradient[:, 2] = gradient[:, 2] / std[2]
         
         tmpInputs = torch.add(data.detach(), magnitude, gradient)
         
@@ -167,7 +174,7 @@ def main(args):
     fpr_at_tprs, aurocs, aupr_ins, aupr_outs = [], [], [], []
     
     if args.scores == 'godin':
-        id_scores = get_scores(deconf_net, id_loader, args.magnitude, args.score_func)
+        id_scores = get_scores(deconf_net, id_loader, args.magnitude, args.score_func, std)
     else:
         id_scores = get_scores(deconf_net, id_loader)
     
@@ -178,7 +185,7 @@ def main(args):
     for ood_loader in ood_loaders:
          
         if args.scores == 'godin':
-            ood_scores = get_scores(deconf_net, ood_loader, args.magnitude, args.score_func)
+            ood_scores = get_scores(deconf_net, ood_loader, args.magnitude, args.score_func, std)
         else:
             ood_scores = get_scores(deconf_net, ood_loader)
         ood_label = np.ones(len(ood_scores))
@@ -216,7 +223,7 @@ if __name__ == '__main__':
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--feature_extractor', type=str, default='wide_resnet')
     parser.add_argument('--h', type=str, default='inner')
-    parser.add_argument('--deconf_path', type=str, default='./snapshots/w-i.pth')
+    parser.add_argument('--deconf_path', type=str, default='./snapshots/cifar10/wrn_i.pth')
     parser.add_argument('--gpu_idx', type=int, default=0)
     
     args = parser.parse_args()
