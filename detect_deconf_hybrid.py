@@ -61,7 +61,7 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine', combin
         if args.h == 'cosine':
             similarity = torch.cosine_similarity(penultimate_feature, rec_penultimate_feature, dim=1)
         elif args.h == 'euclidean':
-            similarity = -((penultimate_feature - rec_penultimate_feature).pow(2)).mean(1)
+            similarity = -((penultimate_feature - rec_penultimate_feature).pow(2)).mean(1)  # < 0
         elif args.h == 'inner':
             similarity = torch.bmm(penultimate_feature.view(args.batch_size, 1, -1), rec_penultimate_feature.view(args.batch_size, -1, 1))
             similarity = torch.squeeze(similarity)
