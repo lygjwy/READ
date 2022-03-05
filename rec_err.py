@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 from functools import partial
 import argparse
@@ -12,21 +13,44 @@ from datasets import get_ae_transforms, get_ae_ood_transforms, get_dataloader
 from models import get_ae
 
 
-def get_rec_errs(ae, data_loader):
+def get_rec_errs(ae, data_loader, output_dir):
+    visual_imgs = []
+    
     ae.eval()
     
     total_loss = 0.0
     rec_errs = []
+
     for sample in data_loader:
         data = sample['data'].cuda()
         
         with torch.no_grad():
             rec_data = ae(data)
-        # rec_err = F.mse_loss(rec_data, data, reduction='sum')
+
         rec_err = torch.sum(F.mse_loss(rec_data, data, reduction='none'), dim=[1, 2, 3])
         rec_errs.extend(rec_err.tolist())
         total_loss += rec_err.sum().item()
 
+        rec_err_list = rec_err.tolist()
+        max_rec_err = max(rec_err_list)
+        max_idx = rec_err_list.index(max_rec_err)
+        visual_img = {
+            'rec_err': max_rec_err,
+            'data': data[max_idx],
+            'rec_data': rec_data[max_idx]
+        }
+        
+        visual_imgs.append(copy.deepcopy(visual_img))
+
+    sorted_visual_imgs = sorted(visual_imgs, key=lambda d: d['rec_err'], reverse=True)
+    for i in range(10):
+        img = sorted_visual_imgs[i]['data']
+        rec_img = sorted_visual_imgs[i]['rec_data']
+        img_path = output_dir / ('-'.join([data_loader.dataset.name, str(i), 'img']) + '.png')
+        save_image(img.cpu(), img_path)
+        rec_img_path = output_dir / ('-'.join([data_loader.dataset.name, str(i), 'rec_img']) + '.png')
+        save_image(rec_img.cpu(), rec_img_path)
+    
     if data_loader.dataset.name in ['cifar10', 'cifar100']:
         print('loss: {:.8f}'.format(total_loss / len(data_loader.dataset)))
     return rec_errs
@@ -103,14 +127,14 @@ def main(args):
     
     #  save rec images
     save_rec_imgs(ae, id_loader, output_path)
-    ori_id_rec_errs = get_rec_errs(ae, id_loader)
+    id_rec_errs = get_rec_errs(ae, id_loader, output_path)
     
     for ood_loader in ood_loaders:
         # save rec images
         save_rec_imgs(ae, ood_loader, output_path)
-        ori_ood_rec_errs = get_rec_errs(ae, ood_loader)
+        ood_rec_errs = get_rec_errs(ae, ood_loader, output_path)
         # plot hist
-        rec_errs = [ori_id_rec_errs, ori_ood_rec_errs]
+        rec_errs = [id_rec_errs, ood_rec_errs]
         colors = ['lime', 'orangered']
         labels = ['id', 'ood']
         title = '-'.join([ood_loader.dataset.name, args.id, 'rec_err'])
@@ -118,12 +142,13 @@ def main(args):
         draw_hist(rec_errs, colors, labels, title, fig_path)
 
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Autoencoder reconstruction')
     parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store experiment artifacts', default='outputs/tmp')
     parser.add_argument('--id', type=str, default='cifar10')
-    parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365', 'isun'])
+    parser.add_argument('--oods', nargs='+', default=['svhn', 'cifar100', 'tinc', 'tinr', 'lsunc', 'lsunr', 'dtd', 'places365_10k', 'isun'])
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--arch', type=str, default='res_ae')

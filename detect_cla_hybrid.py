@@ -64,7 +64,7 @@ def get_hybrid_inner_scores(ae, classifier, data_loader, normalize, combination)
     for complexity in complexities:
         if complexity <= 0.55:
             simi_coefficients.append(0.01)
-        elif complexity < 0.95:
+        elif complexity < 0.85:
             simi_coefficients.append(0.1)
         else:
             simi_coefficients.append(0.01)
@@ -115,11 +115,11 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
     diff_coefficients = []
     for complexity in complexities:
         if complexity <= 0.55:
-            diff_coefficients.append(100.0)
-        elif complexity < 0.95:
-            diff_coefficients.append(0.25)
+            diff_coefficients.append(10.0)
+        elif complexity < 0.85:
+            diff_coefficients.append(0.1)
         else:
-            diff_coefficients.append(100.0)
+            diff_coefficients.append(1.0)
     
     simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
     # combine
@@ -258,11 +258,11 @@ def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_m
     diff_coefficients = []
     for complexity in complexities:
         if complexity <= 0.55:
-            diff_coefficients.append(100.0)
-        elif complexity < 0.95:
-            diff_coefficients.append(0.25)
+            diff_coefficients.append(10.0)
+        elif complexity < 0.85:
+            diff_coefficients.append(0.1)
         else:
-            diff_coefficients.append(100.0)
+            diff_coefficients.append(1.0)
     
     simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
      # combine

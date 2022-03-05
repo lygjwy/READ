@@ -75,26 +75,26 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine', combin
     if args.h == 'cosine':
         if complexity <= 0.55:
             simi_coefficients.append(0.01)
-        elif complexity < 0.95:
-            simi_coefficients.append(0.25)
+        elif complexity < 0.85: # default 0.95
+            simi_coefficients.append(0.1) # default 0.25
         else:
-            simi_coefficients.append(0.01)
+            simi_coefficients.append(0.01) # default 0.01
     elif args.h == 'euclidean':
         for complexity in complexities:
             # simi_coefficients.append(0.5)
             if complexity <= 0.55:
                 simi_coefficients.append(2.0)
-            elif complexity < 0.95:
+            elif complexity < 0.85:
                 simi_coefficients.append(0.5)
             else:
-                simi_coefficients.append(2.0)
+                simi_coefficients.append(1.0)
     elif args.h == 'inner':
         if complexity <= 0.55:
             simi_coefficients.append(0.01)
-        elif complexity < 0.95:
-            simi_coefficients.append(0.25)
+        elif complexity < 0.85: # default 0.95
+            simi_coefficients.append(0.1) # default 0.25
         else:
-            simi_coefficients.append(0.01)
+            simi_coefficients.append(0.01) # default 0.01
     else:
         raise RuntimeError('<--- invalid h: '.format(args.h))
     
