@@ -115,9 +115,9 @@ def get_hybrid_kl_scores(ae, classifier, data_loader, normalize, combination):
     diff_coefficients = []
     for complexity in complexities:
         if complexity <= 0.55:
-            diff_coefficients.append(10.0)
+            diff_coefficients.append(2.0)
         elif complexity < 0.85:
-            diff_coefficients.append(0.1)
+            diff_coefficients.append(0.5)
         else:
             diff_coefficients.append(1.0)
     
@@ -258,11 +258,11 @@ def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_m
     diff_coefficients = []
     for complexity in complexities:
         if complexity <= 0.55:
-            diff_coefficients.append(10.0)
+            diff_coefficients.append(2.0) # 1.0 for ablation study, default 2.0
         elif complexity < 0.85:
-            diff_coefficients.append(0.1)
+            diff_coefficients.append(0.5) # 1.0 for ablation study, default 0.5
         else:
-            diff_coefficients.append(1.0)
+            diff_coefficients.append(1.0) # 1.0 for ablation study and default
     
     simi_scores = [-1.0 * different * diff_coefficient for different, diff_coefficient in zip(differents, diff_coefficients)]
      # combine

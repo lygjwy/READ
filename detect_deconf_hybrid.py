@@ -83,11 +83,11 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine', combin
         for complexity in complexities:
             # simi_coefficients.append(0.5)
             if complexity <= 0.55:
-                simi_coefficients.append(2.0)
+                simi_coefficients.append(2.0) # 1.0 for ablation study, default 2.0
             elif complexity < 0.85:
-                simi_coefficients.append(0.5)
+                simi_coefficients.append(0.5) # 1.0 for ablation study, default 0.5
             else:
-                simi_coefficients.append(1.0)
+                simi_coefficients.append(1.0) # 1.0 for ablation study and default
     elif args.h == 'inner':
         if complexity <= 0.55:
             simi_coefficients.append(0.01)
