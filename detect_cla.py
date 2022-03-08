@@ -28,7 +28,7 @@ def get_msp_scores(classifier, data_loader):
         
             softmax = torch.softmax(logit, dim=1)
             msp_scores.extend(torch.max(softmax, dim=1)[0].tolist())
-            
+    
     return msp_scores
 
 
@@ -205,10 +205,7 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         
         noise_gaussian_score, _ = torch.max(noise_gaussian_score, dim=1)
         maha_scores.extend(noise_gaussian_score.tolist())
-        
-        gaussian_score, _ = torch.max(gaussian_score, dim=1)
-        maha_scores.extend(gaussian_score.tolist())
-        
+
     return maha_scores
 
 
@@ -311,7 +308,7 @@ def main(args):
         if args.scores == 'odin':
             ood_scores = get_scores(classifier, ood_loader, args.temperature, args.magnitude, std)
         elif args.scores == 'maha':
-            ood_scores = get_maha_scores(classifier, ood_loader, num_classes, sample_mean, precision, 0, args.magnitude, std)
+            ood_scores = get_maha_scores(classifier, ood_loader, num_classes, sample_mean, precision, num_layers-1, args.magnitude, std)
         else:
             ood_scores = get_scores(classifier, ood_loader)
         ood_label = np.ones(len(ood_scores))

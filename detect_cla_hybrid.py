@@ -197,8 +197,8 @@ def sample_estimator(classifier, data_loader, normalize, num_classes, feature_di
     return category_sample_mean, precision
 
 
-def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_mean, precision, layer_index, normalize, combination):
-    # prediction distribution level
+def get_hybrid_maha_scores(ae, classifier, data_loader, num_classes, sample_mean, precision, layer_index, magnitude, std, normalize, combination):
+    # feature-level
     ae.eval()
     classifier.eval()
 
@@ -215,44 +215,69 @@ def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_m
             
             data = torch.stack([normalize(img) for img in data], dim=0)
             rec_data = torch.stack([normalize(img) for img in rec_data], dim=0)
-            
-            hidden_feature = classifier.hidden_feature(data, layer_index)
-            hidden_feature = hidden_feature.view(hidden_feature.size(0), hidden_feature.size(1), -1)
-            hidden_feature = torch.mean(hidden_feature, 2)
-            
+        
             rec_hidden_feature = classifier.hidden_feature(rec_data, layer_index)
             rec_hidden_feature = rec_hidden_feature.view(rec_hidden_feature.size(0), rec_hidden_feature.size(1), -1)
             rec_hidden_feature = torch.mean(rec_hidden_feature, 2)
-            
-            gaussian_score = 0
-            rec_gaussian_score = 0
-            
-            for i in range(num_classes):
-                category_sample_mean = sample_mean[layer_index][i]
-                zero_f = hidden_feature.data - category_sample_mean
-                rec_zero_f = rec_hidden_feature.data - category_sample_mean
-                term_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
-                rec_term_gau = -0.5 * torch.mm(torch.mm(rec_zero_f, precision[layer_index]), rec_zero_f.t()).diag()
-                
-                if i == 0:
-                    gaussian_score = term_gau.view(-1, 1)
-                    rec_gaussian_score = rec_term_gau.view(-1, 1)
-                else:
-                    gaussian_score = torch.cat((gaussian_score, term_gau.view(-1, 1)), 1)
-                    rec_gaussian_score = torch.cat((rec_gaussian_score, rec_term_gau.view(-1, 1)), 1)
+        
+        data.requires_grad = True
 
-            # ori_maha_softmax = torch.softmax(gaussian_score, dim=1)
-            gaussian_score = gaussian_score - gaussian_score.max(dim=1, keepdims=True).values
-            ori_maha_softmax = gaussian_score.exp() / gaussian_score.exp().sum(dim=1, keepdims=True) + 1e-40  # prevent inf kl-div
+        hidden_feature = classifier.hidden_feature(data, layer_index)
+        hidden_feature = hidden_feature.view(hidden_feature.size(0), hidden_feature.size(1), -1)
+        hidden_feature = torch.mean(hidden_feature, 2)
+        
+        gaussian_score = 0
+        
+        diff_zero_f = hidden_feature.data - rec_hidden_feature.data
+        diff_term_gau = 0.5 * torch.mm(torch.mm(diff_zero_f, precision[layer_index]), diff_zero_f.t()).diag()
+        
+        for i in range(num_classes):
+            category_sample_mean = sample_mean[layer_index][i]
+            zero_f = hidden_feature.data - category_sample_mean
+            term_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
             
-            # rec_maha_softmax = torch.softmax(rec_gaussian_score, dim=1)
-            rec_gaussian_score = rec_gaussian_score - rec_gaussian_score.max(dim=1, keepdims=True).values
-            rec_maha_softmax = rec_gaussian_score.exp() / rec_gaussian_score.exp().sum(dim=1, keepdims=True) + 1e-40
-            
-            uniform_dist = torch.ones_like(ori_maha_softmax) * (1. / num_classes)
-            # get gaussian score [batch_size, num_classes]
-            scores.extend(torch.sum(F.kl_div(ori_maha_softmax.log(), uniform_dist, reduction='none'), dim=1).tolist())
-            differents.extend(torch.sum(F.kl_div(rec_maha_softmax.log(), ori_maha_softmax, reduction='none'), dim=1).tolist())
+            if i == 0:
+                gaussian_score = term_gau.view(-1, 1)
+            else:
+                gaussian_score = torch.cat((gaussian_score, term_gau.view(-1, 1)), 1)
+
+        # Input precessing
+        sample_pred = gaussian_score.max(1)[1]
+        category_sample_mean = sample_mean[layer_index].index_select(0, sample_pred)
+        
+        zero_f = hidden_feature - category_sample_mean
+        pure_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+        loss = torch.mean(-pure_gau) + torch.mean(diff_term_gau)
+        loss.backward()
+        
+        gradient = torch.ge(data.grad.data, 0)
+        gradient = (gradient.float() - 0.5) * 2
+        
+        gradient[:, 0] = gradient[:, 0] / std[0]
+        gradient[:, 1] = gradient[:, 1] / std[1]
+        gradient[:, 2] = gradient[:, 2] / std[2]
+        
+        tmpInputs = torch.add(data.data, -magnitude, gradient)
+        with torch.no_grad():
+            noise_out_features = classifier.hidden_feature(tmpInputs, layer_index)
+        noise_out_features = noise_out_features.view(noise_out_features.size(0), noise_out_features.size(1), -1)
+        noise_out_features = torch.mean(noise_out_features, 2)
+        noise_gaussian_score = 0
+        
+        noise_diff_zero_f = noise_out_features.data - rec_hidden_feature.data
+        noise_diff_term_gau = 0.5 * torch.mm(torch.mm(noise_diff_zero_f, precision[layer_index]), noise_diff_zero_f.t()).diag()
+        differents.extend(noise_diff_term_gau.tolist())
+        
+        for i in range(num_classes):
+            category_sample_mean = sample_mean[layer_index][i]
+            zero_f = noise_out_features.data - category_sample_mean
+            term_gau = -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+            if i == 0:
+                noise_gaussian_score = term_gau.view(-1, 1)
+            else:
+                noise_gaussian_score = torch.cat((noise_gaussian_score, term_gau.view(-1, 1)), 1)
+        
+        scores.extend(torch.max(noise_gaussian_score, dim=1)[0].tolist())
     
     # change complexities
     diff_coefficients = []
@@ -280,8 +305,8 @@ def get_hybrid_maha_kl_scores(ae, classifier, data_loader, num_classes, sample_m
 
 scores_dic = {
     'hybrid_inner': get_hybrid_inner_scores,
-    'hybrid_kl': get_hybrid_kl_scores,
-    'hybrid_maha_kl': get_hybrid_maha_kl_scores
+    'hybrid_maha': get_hybrid_maha_scores,
+    'hybrid_kl': get_hybrid_kl_scores
 }
 
 
@@ -302,8 +327,8 @@ def main(args):
     
     ae_transform = get_ae_transforms('test')
     
-    means, stds = get_dataset_info(args.id, 'mean_and_std')
-    normalize = Normalize(means, stds)
+    means, std = get_dataset_info(args.id, 'mean_and_std')
+    normalize = Normalize(means, std)
     
     get_dataloader_default = partial(
         get_dataloader,
@@ -354,13 +379,13 @@ def main(args):
     get_scores = scores_dic[args.scores]
     result_dic_list = []
 
-    if args.scores == 'hybrid_maha_kl':
+    if args.scores == 'hybrid_maha':
         num_layers = 1
         feature_dim_list = np.empty(num_layers)
         feature_dim_list[0] = 128  # for wide_resnet
         
         sample_mean, precision = sample_estimator(classifier, id_loader, normalize, num_classes, feature_dim_list)
-        id_scores = get_hybrid_maha_kl_scores(ae, classifier, id_loader, num_classes, sample_mean, precision, num_layers-1, normalize, args.combination)
+        id_scores = get_hybrid_maha_scores(ae, classifier, id_loader, num_classes, sample_mean, precision, num_layers-1, args.magnitude, std, normalize, args.combination)
     else:
         id_scores = get_scores(ae, classifier, id_loader, normalize, args.combination)
     id_label = np.zeros(len(id_scores))
@@ -368,8 +393,8 @@ def main(args):
     for ood_loader in ood_loaders:
         result_dic = {'name': ood_loader.dataset.name}
         
-        if args.scores == 'hybrid_maha_kl':
-            ood_scores = get_hybrid_maha_kl_scores(ae, classifier, ood_loader, num_classes, sample_mean, precision, num_layers-1, normalize, args.combination)
+        if args.scores == 'hybrid_maha':
+            ood_scores = get_hybrid_maha_scores(ae, classifier, ood_loader, num_classes, sample_mean, precision, num_layers-1, args.magnitude, std, normalize, args.combination)
         else:
             ood_scores = get_scores(ae, classifier, ood_loader, normalize, args.combination)
         ood_label = np.ones(len(ood_scores))
@@ -400,15 +425,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Detect OOD using ori_score - coefficient * diff')
     parser.add_argument('--data_dir', type=str, default='/home/iip/datasets')
     parser.add_argument('--output_dir', help='dir to store log', default='logs')
-    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='hybrid_cla')
+    parser.add_argument('--output_sub_dir', help='sub dir to store log', default='hybrid_cla-maha')
     parser.add_argument('--id', type=str, default='cifar10')
     parser.add_argument('--oods', nargs='+', default=['svhn', 'lsunc', 'dtd', 'places365_10k', 'cifar100', 'tinc', 'lsunr', 'tinr', 'isun'])
     parser.add_argument('--ae', type=str, default='res_ae')
     parser.add_argument('--ae_path', type=str, default='./snapshots/cifar10/rec.pth')
     parser.add_argument('--classifier', type=str, default='wide_resnet')
     parser.add_argument('--classifier_path', type=str, default='./snapshots/cifar10/wrn.pth')
-    parser.add_argument('--scores', type=str, default='hybrid_maha_kl')
+    parser.add_argument('--scores', type=str, default='hybrid_maha')
     parser.add_argument('--combination', type=str, default='hybrid')  # ori, diff, hybrid 
+    parser.add_argument('--magnitude', type=float, default=0.0)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--prefetch', type=int, default=4)
     parser.add_argument('--gpu_idx', type=int, default=0)

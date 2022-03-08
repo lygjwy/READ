@@ -100,7 +100,7 @@ def get_hybrid_scores(ae, deconf_net, data_loader, normalize, h='cosine', combin
     
     simi_scores = [similarity * simi_coefficient for similarity, simi_coefficient in zip(similarities, simi_coefficients)]
     
-     # combine
+    # combine
     if combination == 'ori':
         return scores
     elif combination == 'diff':

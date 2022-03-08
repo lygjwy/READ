@@ -72,7 +72,7 @@ def get_h(h_name, in_features, num_classes):
         raise RuntimeError('<--- invalid h name: {}'.format(h_name))
     
     return h
-    
+
 class DeconfNet(nn.Module):
     def __init__(self, feature_extractor, h):
         super(DeconfNet, self).__init__()
@@ -88,7 +88,7 @@ class DeconfNet(nn.Module):
         )
         
         # self.softmax = nn.Softmax()
-        
+
     def forward(self, x):
         output = self.feature_extractor(x)
         

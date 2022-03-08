@@ -33,7 +33,7 @@ def get_ood_val_loader(name, mean, std, get_dataloader_default):
             transforms.Normalize(mean, std)
         ])
     
-    ood_val_loader = get_dataloader_default(name='cifar10', transform=transform)
+    ood_val_loader = get_dataloader_default(name=args.id, transform=transform)
     
     return ood_val_loader
 
@@ -114,7 +114,7 @@ def main(args):
     uniform_noise_loader = get_uniform_noise_dataloader(10000, args.batch_size, False, args.prefetch)
     ood_loaders.append(uniform_noise_loader)
     
-    id_dataset = get_dataset(root=args.data_dir, name='cifar10', split='test', transform=test_transform)
+    id_dataset = get_dataset(root=args.data_dir, name=args.id, split='test', transform=test_transform)
     avg_pair_loader = DataLoader(
         AvgOfPair(id_dataset),
         batch_size=args.batch_size,
@@ -124,7 +124,7 @@ def main(args):
     )
     ood_loaders.append(avg_pair_loader)
     
-    id_dataset = get_dataset(root=args.data_dir, name='cifar10', split='test', transform=transforms.ToTensor())
+    id_dataset = get_dataset(root=args.data_dir, name=args.id, split='test', transform=transforms.ToTensor())
     geo_mean_loader = DataLoader(
         GeoMeanOfPair(id_dataset),
         batch_size=args.batch_size,

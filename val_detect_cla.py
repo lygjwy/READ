@@ -191,9 +191,6 @@ def get_maha_scores(classifier, data_loader, num_classes, sample_mean, precision
         noise_gaussian_score, _ = torch.max(noise_gaussian_score, dim=1)
         maha_scores.extend(noise_gaussian_score.tolist())
         
-        gaussian_score, _ = torch.max(gaussian_score, dim=1)
-        maha_scores.extend(gaussian_score.tolist())
-
     return maha_scores
 
 
@@ -211,7 +208,7 @@ def get_ood_val_loader(name, mean, std, get_dataloader_default):
             transforms.Normalize(mean, std)
         ])
     
-    ood_val_loader = get_dataloader_default(name='cifar10', transform=transform)
+    ood_val_loader = get_dataloader_default(name=args.id, transform=transform)
     
     return ood_val_loader
 
@@ -252,7 +249,7 @@ def main(args):
     )
     ood_loaders.append(avg_pair_loader)
     
-    id_dataset = get_dataset(root=args.data_dir, name='cifar10', split='test', transform=transforms.ToTensor())
+    id_dataset = get_dataset(root=args.data_dir, name=args.id, split='test', transform=transforms.ToTensor())
     geo_mean_loader = DataLoader(
         GeoMeanOfPair(id_dataset),
         batch_size=args.batch_size,
