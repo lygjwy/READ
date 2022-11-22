@@ -1,2 +1,1 @@
-# Vanilla_OOD_Detection
-Vanilla Out-of-Distribution Detection
+# READ: Aggregating Reconstruction Error into Out-of-distribution Deteciton
