@@ -3,9 +3,14 @@
 
   <div>
     <a href="https://lygjwy.github.io/" target="_blank">Wenyu Jiang</a>
+    Yuxin Ge
+    Hao Cheng
+    Mingcai Chen
+    Shuai Feng
+    Chongjun Wang
   </div>
   <div>
-    IIP, Nanjing University
+    IIP Group, Nanjing University
   </div>
 
   <a href="https://arxiv.org/abs/2206.07459">Paper</a> •
