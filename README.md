@@ -1,4 +1,9 @@
-<h2 align="center">READ: Aggregating Reconstruction Error into Out-of-distribution Detection</h2>
+<h1 align="center">READ</h1>
+<h4 align='center'>
+An official PyTorch implementation of paper 
+<a href="https://arxiv.org/abs/2206.07459">READ: Aggregating Reconstruction Error into Out-of-distribution Detection</a>
+</h4>
+
 <div align="center">
 
   <div>
@@ -12,8 +17,6 @@
   <div>
     IIP Group, Nanjing University
   </div>
-
-  <a href="https://arxiv.org/abs/2206.07459">Paper</a> •
   <a href="">Slide</a> •
   <a href="">Video</a>
 </div>
