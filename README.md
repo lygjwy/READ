@@ -1,5 +1,5 @@
 <h2 align="center">
-  <a href="https://arxiv.org/abs/2206.07459">READ: Aggregating Reconstruction Error into Out-of-distribution Detection</a>
+  READ: Aggregating Reconstruction Error into Out-of-distribution Detection
 </h2>
 
 <div align="center">
@@ -13,8 +13,9 @@
     Chongjun Wang
   </div>
   <div>
-    IIP Group, Nanjing University
+    <a href="https://iip.nju.edu.cn">IIP Group</a>, Nanjing University
   </div>
+  <a href="https://arxiv.org/abs/2206.07459">Paper</a>
   <a href="">Slide</a> •
   <a href="">Video</a>
 </div>
