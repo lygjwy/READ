@@ -1,21 +1,13 @@
-<h2 align="center">
-  READ: Aggregating Reconstruction Error into Out-of-distribution Detection
-</h2>
+<h1 align="center">
+  READ
+</h1>
+
+<br>
+<div align='center'>
+  <h4> An official PyTorch implementation of AAAI 2023 paper 'READ: Aggregating Reconstruction Error into Out-of-distribution Detection' </h4>
+</div>
 
 <div align="center">
-
-  <div>
-    <a href="https://lygjwy.github.io/" target="_blank">Wenyu Jiang</a>,
-    Yuxin Ge,
-    Hao Cheng,
-    Mingcai Chen,
-    Shuai Feng,
-    Chongjun Wang
-  </div>
-  <div>
-    <a href="http://iip.nju.edu.cn" target="_blank">IIP Group</a>, Nanjing University
-  </div>
-  <br>
   <a href="https://arxiv.org/abs/2206.07459" target='_blank'>
     <img src="https://img.shields.io/badge/Paper-AAAI%202023-red?style=flat-square">
   </a> &nbsp;&nbsp;&nbsp;
