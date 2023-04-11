@@ -1,12 +1,9 @@
 <h1 align="center">
+  <br>
   READ
+  <br>
 </h1>
-
-<br>
-<div align='center'>
-  <h4> An official PyTorch implementation of AAAI 2023 paper 'READ: Aggregating Reconstruction Error into Out-of-distribution Detection' </h4>
-</div>
-
+<h4 align="center"> An official PyTorch implementation of AAAI 2023 paper 'READ: Aggregating Reconstruction Error into Out-of-distribution Detection' </h4>
 <div align="center">
   <a href="https://arxiv.org/abs/2206.07459" target='_blank'>
     <img src="https://img.shields.io/badge/Paper-AAAI%202023-red?style=flat-square">
