@@ -15,7 +15,7 @@
   <div>
     <a href="https://iip.nju.edu.cn">IIP Group</a>, Nanjing University
   </div>
-  <a href="https://arxiv.org/abs/2206.07459">Paper</a>
+  <a href="https://arxiv.org/abs/2206.07459">Paper</a> •
   <a href="">Slide</a> •
   <a href="">Video</a>
 </div>
