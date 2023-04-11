@@ -1,6 +1,6 @@
 <h1 align="center">READ</h1>
 <h4 align='center'>
-An official PyTorch implementation of paper 
+An official PyTorch implementation of AAAI '23 paper 
 <a href="https://arxiv.org/abs/2206.07459">READ: Aggregating Reconstruction Error into Out-of-distribution Detection</a>
 </h4>
 
