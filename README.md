@@ -13,15 +13,17 @@
     Chongjun Wang
   </div>
   <div>
-    <a href="https://iip.nju.edu.cn" target="_blank">IIP Group</a>, Nanjing University
+    <a href="http://iip.nju.edu.cn" target="_blank">IIP Group</a>, Nanjing University
   </div>
   <br>
   <a href="https://arxiv.org/abs/2206.07459" target='_blank'>
     <img src="https://img.shields.io/badge/Paper-AAAI%202023-red?style=flat-square">
-  </a> </br>
+  </a>
+  
   <a href="assets/read_aaai23_slide.pdf">
     <img src="https://img.shields.io/badge/Slide-AAAI%202023-blue?style=flat-square">
-  </a> </br>
+  </a>
+  
   <a href=''>
     <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square">
   </a>
