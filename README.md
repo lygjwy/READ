@@ -22,7 +22,6 @@
   </a>
 </div>
 
----
 
 ## Updates
 - **April, 2023**: We released the full code.
