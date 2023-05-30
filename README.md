@@ -22,6 +22,11 @@
   </a>
 </div>
 
+<p align="center">
+  <a href="#-get-started">Get Started</a> •
+  <a href="#-acknowledgements">Acknowledgements</a> •
+  <a href="#-Citation">Citation</a>
+</p>
 
 ## Updates
 - **April, 2023**: We released the full code.
