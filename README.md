@@ -7,7 +7,7 @@
 <h4 align="center">
   An official PyTorch implementation of AAAI 2023 paper
   <br>
-  <READ: Aggregating Reconstruction Error into Out-of-distribution Detection>
+  "READ: Aggregating Reconstruction Error into Out-of-distribution Detection"
 </h4>
 
 <div align="center">
