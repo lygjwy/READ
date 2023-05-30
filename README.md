@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="#-get-started">Get Started</a> •
-  <a href="#-acknowledgements">Acknowledgements</a> •
+  <a href="#-ccknowledgements">Acknowledgements</a> •
   <a href="#-Citation">Citation</a>
 </p>
 
