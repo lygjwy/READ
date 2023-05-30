@@ -28,9 +28,6 @@
   <a href="#citation">Citation</a>
 </p>
 
-## Updates
-- **April, 2023**: We released the full code.
-
 ## Get Started
 ### Overview
 This repository is an official PyTorch implementation of AAAI 2023 paper 'READ: Aggregating Reconstruction Error into Out-of-distribution Detection'. The illustration of our algorithm is shown as below:
