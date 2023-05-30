@@ -12,7 +12,7 @@
 
 <div align="center">
   <a href="https://arxiv.org/abs/2206.07459" target='_blank'>
-    <img src="https://img.shields.io/badge/Paper-AAAI%202023-red?style=flat-square">
+    <img src="https://img.shields.io/badge/Paper-arXiv-red?style=flat-square">
   </a> &nbsp;&nbsp;&nbsp;
   <a href="assets/read_aaai23_slide.pdf">
     <img src="https://img.shields.io/badge/Slide-AAAI%202023-blue?style=flat-square">
